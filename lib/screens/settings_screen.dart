@@ -12,6 +12,8 @@ import '../models/models.dart';
 import '../theme/app_theme.dart';
 import '../theme/theme_style.dart';
 import '../utils/responsive_layout.dart';
+import '../utils/openrouter_models.dart';
+import '../utils/ai_studio_models.dart';
 import '../data/hive_word_repository.dart';
 
 /// 设置页面
@@ -27,10 +29,24 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   String _wordStatusSort = 'recent_review';
   final TextEditingController _wordStatusSearchController =
       TextEditingController();
+  final TextEditingController _apiKeyController = TextEditingController();
+  final TextEditingController _aiStudioApiKeyController =
+      TextEditingController();
+
+  @override
+  void initState() {
+    super.initState();
+    // 初始化 API Key
+    final settings = ref.read(appSettingsProvider);
+    _apiKeyController.text = settings.openRouterApiKey;
+    _aiStudioApiKeyController.text = settings.aiStudioApiKey;
+  }
 
   @override
   void dispose() {
     _wordStatusSearchController.dispose();
+    _apiKeyController.dispose();
+    _aiStudioApiKeyController.dispose();
     super.dispose();
   }
 
@@ -38,6 +54,24 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final settings = ref.watch(appSettingsProvider);
+
+    // 监听设置变化同步 API Key (处理重置等外部变更)
+    ref.listen(appSettingsProvider, (previous, next) {
+      if (next.openRouterApiKey != _apiKeyController.text) {
+        _apiKeyController.text = next.openRouterApiKey;
+        // 保持光标在末尾，避免跳动
+        _apiKeyController.selection = TextSelection.fromPosition(
+          TextPosition(offset: _apiKeyController.text.length),
+        );
+      }
+      if (next.aiStudioApiKey != _aiStudioApiKeyController.text) {
+        _aiStudioApiKeyController.text = next.aiStudioApiKey;
+        // 保持光标在末尾，避免跳动
+        _aiStudioApiKeyController.selection = TextSelection.fromPosition(
+          TextPosition(offset: _aiStudioApiKeyController.text.length),
+        );
+      }
+    });
 
     return Scaffold(
       appBar: AppBar(
@@ -726,6 +760,249 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     );
   }
 
+  Widget _buildOpenRouterApiKeyField(
+    BuildContext context,
+    WidgetRef ref,
+    AppSettings settings,
+  ) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text('OpenRouter API Key'),
+        const SizedBox(height: 8),
+        TextField(
+          controller: _apiKeyController,
+          obscureText: true,
+          decoration: const InputDecoration(
+            hintText: 'sk-or-v1-...',
+            border: OutlineInputBorder(),
+            isDense: true,
+            contentPadding: EdgeInsets.all(12),
+          ),
+          onChanged: (value) {
+            ref
+                .read(appSettingsProvider.notifier)
+                .updateOpenRouterSettings(apiKey: value);
+          },
+        ),
+      ],
+    );
+  }
+
+  Widget _buildOpenRouterModelSelector(
+    BuildContext context,
+    WidgetRef ref,
+    AppSettings settings,
+  ) {
+    final modelsAsync = ref.watch(openRouterFreeModelsProvider);
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text('默认模型'),
+        const SizedBox(height: 8),
+        modelsAsync.when(
+          data: (models) {
+            var validModels = models.toList();
+            // 确保当前选中值在列表中
+            if (settings.openRouterDefaultModel.isNotEmpty &&
+                !validModels.any(
+                  (m) => m.id == settings.openRouterDefaultModel,
+                )) {
+              // 如果当前值不在列表中，添加一个占位项
+              validModels = [
+                OpenRouterModel(
+                  id: settings.openRouterDefaultModel,
+                  name: settings.openRouterDefaultModel,
+                  promptPrice: '?',
+                  completionPrice: '?',
+                ),
+                ...validModels,
+              ];
+            }
+
+            if (validModels.isEmpty) {
+              return const Text('无可用模型');
+            }
+
+            return DropdownButtonFormField<String>(
+              value: settings.openRouterDefaultModel,
+              isExpanded: true,
+              decoration: const InputDecoration(
+                border: OutlineInputBorder(),
+                isDense: true,
+                contentPadding: EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 12,
+                ),
+              ),
+              items: validModels.map((model) {
+                return DropdownMenuItem(
+                  value: model.id,
+                  child: Text(model.id, overflow: TextOverflow.ellipsis),
+                );
+              }).toList(),
+              onChanged: (value) {
+                if (value != null) {
+                  ref
+                      .read(appSettingsProvider.notifier)
+                      .updateOpenRouterSettings(defaultModel: value);
+                }
+              },
+            );
+          },
+          loading: () => const Center(
+            child: Padding(
+              padding: EdgeInsets.all(8.0),
+              child: SizedBox(
+                width: 24,
+                height: 24,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              ),
+            ),
+          ),
+          error: (err, stack) => Text(
+            '加载失败',
+            style: TextStyle(color: Theme.of(context).colorScheme.error),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildAiSettingsSection(
+    BuildContext context,
+    WidgetRef ref,
+    AppSettings settings,
+  ) {
+    return _buildSection(context, 'OpenRouter 设置', [
+      _buildOpenRouterApiKeyField(context, ref, settings),
+      const SizedBox(height: 16),
+      _buildOpenRouterModelSelector(context, ref, settings),
+    ]);
+  }
+
+  Widget _buildAiStudioApiKeyField(
+    BuildContext context,
+    WidgetRef ref,
+    AppSettings settings,
+  ) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text('AI Studio API Key'),
+        const SizedBox(height: 8),
+        TextField(
+          controller: _aiStudioApiKeyController,
+          obscureText: true,
+          decoration: const InputDecoration(
+            hintText: 'AI Studio API Key',
+            border: OutlineInputBorder(),
+            isDense: true,
+            contentPadding: EdgeInsets.all(12),
+          ),
+          onChanged: (value) {
+            ref
+                .read(appSettingsProvider.notifier)
+                .updateAiStudioSettings(apiKey: value);
+          },
+        ),
+      ],
+    );
+  }
+
+  Widget _buildAiStudioModelSelector(
+    BuildContext context,
+    WidgetRef ref,
+    AppSettings settings,
+  ) {
+    final modelsAsync = ref.watch(aiStudioModelsProvider);
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text('默认模型'),
+        const SizedBox(height: 8),
+        modelsAsync.when(
+          data: (models) {
+            var validModels = models.toList();
+            // 确保当前选中值在列表中
+            if (settings.aiStudioDefaultModel.isNotEmpty &&
+                !validModels.any(
+                  (m) => m.name == settings.aiStudioDefaultModel,
+                )) {
+              // 如果当前值不在列表中，添加一个占位项
+              validModels = [
+                AiStudioModel(
+                  name: settings.aiStudioDefaultModel,
+                  displayName: settings.aiStudioDefaultModel,
+                  supportedGenerationMethods: ['generateContent'],
+                ),
+                ...validModels,
+              ];
+            }
+
+            if (validModels.isEmpty) {
+              return const Text('无可用模型');
+            }
+
+            return DropdownButtonFormField<String>(
+              value: settings.aiStudioDefaultModel,
+              isExpanded: true,
+              decoration: const InputDecoration(
+                border: OutlineInputBorder(),
+                isDense: true,
+                contentPadding: EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 12,
+                ),
+              ),
+              items: validModels.map((model) {
+                return DropdownMenuItem(
+                  value: model.name,
+                  child: Text(model.name, overflow: TextOverflow.ellipsis),
+                );
+              }).toList(),
+              onChanged: (value) {
+                if (value != null) {
+                  ref
+                      .read(appSettingsProvider.notifier)
+                      .updateAiStudioSettings(defaultModel: value);
+                }
+              },
+            );
+          },
+          loading: () => const Center(
+            child: Padding(
+              padding: EdgeInsets.all(8.0),
+              child: SizedBox(
+                width: 24,
+                height: 24,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              ),
+            ),
+          ),
+          error: (err, stack) => Text(
+            '加载失败',
+            style: TextStyle(color: Theme.of(context).colorScheme.error),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildAiStudioSettingsSection(
+    BuildContext context,
+    WidgetRef ref,
+    AppSettings settings,
+  ) {
+    return _buildSection(context, 'AI Studio 设置', [
+      _buildAiStudioApiKeyField(context, ref, settings),
+      const SizedBox(height: 16),
+      _buildAiStudioModelSelector(context, ref, settings),
+    ]);
+  }
+
   Widget _buildSrsAlphaSlider(
     BuildContext context,
     WidgetRef ref,
@@ -1408,6 +1685,20 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
           height: AppTheme.getResponsivePadding(context, AppTheme.paddingLarge),
         ),
 
+        // AI 设置
+        _buildAiSettingsSection(context, ref, settings),
+
+        SizedBox(
+          height: AppTheme.getResponsivePadding(context, AppTheme.paddingLarge),
+        ),
+
+        // AI Studio 设置
+        _buildAiStudioSettingsSection(context, ref, settings),
+
+        SizedBox(
+          height: AppTheme.getResponsivePadding(context, AppTheme.paddingLarge),
+        ),
+
         // 可访问性
         _buildSection(context, '可访问性', [
           _buildHighContrastSwitch(context, ref, settings),
@@ -1485,6 +1776,26 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
               _buildTtsRateSlider(context, ref, settings),
               _buildTtsPitchSlider(context, ref, settings),
             ]),
+
+            SizedBox(
+              height: AppTheme.getResponsivePadding(
+                context,
+                AppTheme.paddingLarge,
+              ),
+            ),
+
+            // AI 设置
+            _buildAiSettingsSection(context, ref, settings),
+
+            SizedBox(
+              height: AppTheme.getResponsivePadding(
+                context,
+                AppTheme.paddingLarge,
+              ),
+            ),
+
+            // AI Studio 设置
+            _buildAiStudioSettingsSection(context, ref, settings),
           ],
         ),
         right: Column(
