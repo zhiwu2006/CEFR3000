@@ -73,13 +73,11 @@ class BauhausTheme {
         secondary: primaryRed,
         tertiary: primaryYellow,
         surface: surface,
-        background: background,
         error: wrongColor,
         onPrimary: Colors.white,
         onSecondary: Colors.white,
         onTertiary: foreground,
         onSurface: foreground,
-        onBackground: foreground,
         outline: foreground,
       ),
 
@@ -191,7 +189,7 @@ class BauhausTheme {
         activeTrackColor: primaryBlue,
         inactiveTrackColor: muted,
         thumbColor: primaryRed,
-        overlayColor: primaryRed.withOpacity(0.2),
+        overlayColor: primaryRed.withValues(alpha: 0.2),
         trackHeight: 8,
         thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 12),
       ),
@@ -203,8 +201,10 @@ class BauhausTheme {
           return muted;
         }),
         trackColor: WidgetStateProperty.resolveWith((states) {
-          if (states.contains(WidgetState.selected)) return primaryRed.withOpacity(0.5);
-          return foreground.withOpacity(0.2);
+    if (states.contains(WidgetState.selected)) {
+      return primaryRed.withValues(alpha: 0.5);
+    }
+    return foreground.withValues(alpha: 0.2);
         }),
       ),
 

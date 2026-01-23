@@ -135,7 +135,6 @@ class _OptionButtonState extends State<OptionButton>
   Widget _buildButton(BuildContext context, ThemeData theme) {
     final themeStyle = widget.themeStyle ?? 
         (widget.isHighContrast ? ThemeStyle.highContrast : ThemeStyle.standard);
-    final borderRadius = ThemeManager.getBorderRadius(themeStyle);
     
     return GestureDetector(
       onTapDown: widget.isEnabled ? _onTapDown : null,
@@ -174,7 +173,6 @@ class _OptionButtonState extends State<OptionButton>
     final isDark = ThemeManager.isDarkTheme(themeStyle);
     final correctColor = ThemeManager.getCorrectColor(themeStyle);
     final wrongColor = ThemeManager.getWrongColor(themeStyle);
-    final borderRadius = ThemeManager.getBorderRadius(themeStyle);
     final borderWidth = ThemeManager.getBorderWidth(themeStyle);
     final borderColor = ThemeManager.getBorderColor(themeStyle);
     

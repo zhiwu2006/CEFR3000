@@ -60,11 +60,26 @@ class CardState {
   /// 是否标记为疑难
   bool get isMarkedDifficult => (flags & 1) != 0;
 
+  static int leechLapsesThreshold = 2;
+  static bool leechIncludeMarked = true;
+
+  static void updateLeechPolicy({
+    int? lapsesThreshold,
+    bool? includeMarked,
+  }) {
+    if (lapsesThreshold != null && lapsesThreshold > 0) {
+      leechLapsesThreshold = lapsesThreshold;
+    }
+    if (includeMarked != null) {
+      leechIncludeMarked = includeMarked;
+    }
+  }
+
   /// 是否到期
   bool get isDue => DateTime.now().isAfter(due) || DateTime.now().isAtSameMomentAs(due);
 
-  /// 是否为不熟单词（失忆次数>=2或标记疑难）
-  bool get isLeech => lapses >= 2 || isMarkedDifficult;
+  /// 是否为不熟单词（失忆次数达到阈值或标记疑难）
+  bool get isLeech => lapses >= leechLapsesThreshold || (leechIncludeMarked && isMarkedDifficult);
 
   /// 标记为疑难
   CardState markDifficult() => copyWith(flags: flags | 1);

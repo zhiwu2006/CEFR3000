@@ -1,4 +1,6 @@
 import 'dart:math';
+import 'package:flutter/foundation.dart';
+
 import '../models/models.dart';
 
 /// 测试集生成器
@@ -27,14 +29,14 @@ class TestSetGenerator {
     List<Word>? leechWords,
     List<Word>? dueWords,
   }) {
-    print('=== TestSetGenerator.generateTestSet ===');
-    print('All words: ${allWords.length}');
-    print('Target levels: $levels');
-    print('Target size: $size');
-    print('Order policy: $orderPolicy');
-    print('Only leeches: $onlyLeeches');
-    print('Leech words: ${leechWords?.length}');
-    print('Due words: ${dueWords?.length}');
+    debugPrint('=== TestSetGenerator.generateTestSet ===');
+    debugPrint('All words: ${allWords.length}');
+    debugPrint('Target levels: $levels');
+    debugPrint('Target size: $size');
+    debugPrint('Order policy: $orderPolicy');
+    debugPrint('Only leeches: $onlyLeeches');
+    debugPrint('Leech words: ${leechWords?.length}');
+    debugPrint('Due words: ${dueWords?.length}');
     
     List<Word> candidateWords;
 
@@ -43,7 +45,7 @@ class TestSetGenerator {
       candidateWords = leechWords
           .where((word) => levels.contains(word.level))
           .toList();
-      print('Leech candidate words: ${candidateWords.length}');
+      debugPrint('Leech candidate words: ${candidateWords.length}');
     } else {
       // 正常模式：优先到期词，然后新词
       candidateWords = _selectCandidateWords(
@@ -52,7 +54,7 @@ class TestSetGenerator {
         dueWords: dueWords ?? [],
         targetSize: size,
       );
-      print('Normal mode candidate words: ${candidateWords.length}');
+      debugPrint('Normal mode candidate words: ${candidateWords.length}');
     }
 
     // 确保有足够的候选词
@@ -61,20 +63,20 @@ class TestSetGenerator {
       candidateWords = allWords
           .where((word) => levels.contains(word.level))
           .toList();
-      print('Fallback to all level words: ${candidateWords.length}');
+      debugPrint('Fallback to all level words: ${candidateWords.length}');
     }
     
     // 检查是否有足够的单词
     if (candidateWords.length < size) {
-      print('WARNING: Not enough words available!');
-      print('Requested: $size words, Available: ${candidateWords.length} words');
-      print('Available levels: ${candidateWords.map((w) => w.level).toSet()}');
+      debugPrint('WARNING: Not enough words available!');
+      debugPrint('Requested: $size words, Available: ${candidateWords.length} words');
+      debugPrint('Available levels: ${candidateWords.map((w) => w.level).toSet()}');
       
       // 建议用户选择更多级别
       final availableLevels = allWords.map((w) => w.level).toSet();
       final missingLevels = availableLevels.difference(levels);
       if (missingLevels.isNotEmpty) {
-        print('建议选择更多级别: $missingLevels');
+        debugPrint('建议选择更多级别: $missingLevels');
       }
     }
 
@@ -91,14 +93,14 @@ class TestSetGenerator {
         orderedWords = _orderByLevel(candidateWords);
     }
     
-    print('Ordered words: ${orderedWords.length}');
+    debugPrint('Ordered words: ${orderedWords.length}');
 
     // 选择指定数量的词（如果不够就全部选择）
     final actualSize = min(size, orderedWords.length);
     final result = orderedWords.take(actualSize).toList();
     
-    print('Final test set size: ${result.length} (requested: $size)');
-    print('Final test set: ${result.map((w) => '${w.headword}(${w.level})').take(10).toList()}');
+    debugPrint('Final test set size: ${result.length} (requested: $size)');
+    debugPrint('Final test set: ${result.map((w) => '${w.headword}(${w.level})').take(10).toList()}');
     
     return result;
   }
@@ -113,10 +115,10 @@ class TestSetGenerator {
     final candidates = <Word>[];
     final usedIds = <int>{};
     
-    print('=== _selectCandidateWords ===');
-    print('All words: ${allWords.length}');
-    print('Due words: ${dueWords.length}');
-    print('Target size: $targetSize');
+    debugPrint('=== _selectCandidateWords ===');
+    debugPrint('All words: ${allWords.length}');
+    debugPrint('Due words: ${dueWords.length}');
+    debugPrint('Target size: $targetSize');
 
     // 1. 添加到期词
     for (final word in dueWords) {
@@ -128,7 +130,7 @@ class TestSetGenerator {
       }
     }
     
-    print('After adding due words: ${candidates.length}');
+    debugPrint('After adding due words: ${candidates.length}');
 
     // 2. 如果还需要更多词，从所有符合级别的词中随机选择
     if (candidates.length < targetSize) {
@@ -138,7 +140,7 @@ class TestSetGenerator {
               !usedIds.contains(word.id))
           .toList();
       
-      print('Remaining words available: ${remainingWords.length}');
+      debugPrint('Remaining words available: ${remainingWords.length}');
 
       remainingWords.shuffle(_random);
       
@@ -146,10 +148,10 @@ class TestSetGenerator {
       final toAdd = remainingWords.take(needed);
       candidates.addAll(toAdd);
       
-      print('Added ${toAdd.length} additional words');
+      debugPrint('Added ${toAdd.length} additional words');
     }
     
-    print('Final candidates: ${candidates.length}');
+    debugPrint('Final candidates: ${candidates.length}');
     return candidates;
   }
 
@@ -197,7 +199,6 @@ class TestSetGenerator {
     required Set<String> levels,
     int maxNewWords = 20,
   }) {
-    final now = DateTime.now();
     final deckWords = <Word>[];
     final usedIds = <int>{};
 

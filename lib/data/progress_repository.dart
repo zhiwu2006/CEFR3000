@@ -1,5 +1,4 @@
 import '../models/models.dart';
-import '../models/word_status.dart';
 
 /// 进度仓储接口
 abstract class ProgressRepository {
@@ -45,6 +44,15 @@ abstract class ProgressRepository {
   /// 清除所有进度
   Future<void> clearAllProgress();
 
+  /// 清除测试记录
+  Future<void> clearTestRuns();
+
+  /// 清除答题记录
+  Future<void> clearAttempts();
+
+  /// 清除卡片状态
+  Future<void> clearCardStates();
+
   /// 导出进度数据
   Future<Map<String, dynamic>> exportProgress();
 
@@ -53,6 +61,9 @@ abstract class ProgressRepository {
 
   /// 重置单词进度（标记为已掌握）
   Future<void> resetWordProgress(int wordId);
+
+  /// 标记单词为已掌握（提升稳定度并清除疑难状态）
+  Future<void> markWordKnown(int wordId);
 
   /// 标记单词为疑难
   Future<void> markWordDifficult(int wordId);

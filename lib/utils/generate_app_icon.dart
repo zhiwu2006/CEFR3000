@@ -1,5 +1,4 @@
 import 'dart:io';
-import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'app_icon_generator.dart';
 
@@ -7,14 +6,14 @@ import 'app_icon_generator.dart';
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  print('开始生成应用图标...');
+  debugPrint('开始生成应用图标...');
 
   try {
     // 生成不同尺寸的图标
     final sizes = [512, 192, 144, 96, 72, 48, 36];
 
     for (final size in sizes) {
-      print('生成 ${size}x$size 图标...');
+      debugPrint('生成 ${size}x$size 图标...');
 
       final iconData = await AppIconGenerator.generateIcon(
         size: size.toDouble(),
@@ -28,14 +27,14 @@ void main() async {
       await file.create(recursive: true);
       await file.writeAsBytes(iconData);
 
-      print('✓ 已保存: ${file.path}');
+      debugPrint('✓ 已保存: ${file.path}');
     }
 
-    print('\n图标生成完成！');
-    print('请将生成的图标文件复制到对应的平台目录：');
-    print('- Android: android/app/src/main/res/mipmap-*/');
-    print('- iOS: ios/Runner/Assets.xcassets/AppIcon.appiconset/');
+    debugPrint('\n图标生成完成！');
+    debugPrint('请将生成的图标文件复制到对应的平台目录：');
+    debugPrint('- Android: android/app/src/main/res/mipmap-*/');
+    debugPrint('- iOS: ios/Runner/Assets.xcassets/AppIcon.appiconset/');
   } catch (e) {
-    print('生成图标时出错: $e');
+    debugPrint('生成图标时出错: $e');
   }
 }

@@ -468,7 +468,6 @@ class HomeScreen extends ConsumerWidget {
     required Color color,
   }) {
     final decoration = ThemeManager.getStatCardDecoration(themeStyle, color);
-    final textColor = ThemeManager.getTextColor(themeStyle);
     final secondaryTextColor = ThemeManager.getSecondaryTextColor(themeStyle);
 
     return Container(
@@ -514,7 +513,6 @@ class HomeScreen extends ConsumerWidget {
     ThemeStyle themeStyle,
   ) {
     final contentDecoration = ThemeManager.getContentAreaDecoration(themeStyle);
-    final textColor = ThemeManager.getTextColor(themeStyle);
     final secondaryTextColor = ThemeManager.getSecondaryTextColor(themeStyle);
     
     return Container(
@@ -558,6 +556,12 @@ class HomeScreen extends ConsumerWidget {
       wrongDelay: delay.wrongDelay,
       slowDelay: delay.slowDelay,
       slowThreshold: settings.slowThreshold,
+      newCardRatio: settings.newCardRatio,
+      dailyNewLimit: settings.dailyNewLimit,
+      ttsAutoPlay: settings.ttsAutoPlay,
+      ttsOnWrong: settings.ttsOnWrong,
+      leechLapsesThreshold: settings.leechLapsesThreshold,
+      leechIncludeMarked: settings.leechIncludeMarked,
     );
 
     Navigator.of(context).pushNamed('/test', arguments: config);

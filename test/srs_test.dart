@@ -24,12 +24,13 @@ void main() {
         equals(1),
       );
       
-      // 慢对（反应时间 > 80% 时限）
+      // 慢对（自适应阈值）
       expect(
         SrsAlgorithm.calculateQuality(
           result: AttemptResult.correct,
           reactionTime: 1700, // > 0.8 * 2000
           timeLimit: 2000,
+          baselineRtMs: 1200,
         ),
         equals(3),
       );

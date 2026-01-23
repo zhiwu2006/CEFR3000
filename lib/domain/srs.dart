@@ -4,21 +4,56 @@ import '../models/models.dart';
 /// SRS算法实现
 class SrsAlgorithm {
   // SRS参数
-  static const double _alphaStability = 0.18; // 稳定度调整系数（提升成长幅度）
-  static const double _betaFailure = 1.2; // 失败时稳定度重置
-  static const double _gammaInterval = 1.0; // 间隔计算系数
+  static double _alphaStability = 0.18; // 稳定度调整系数（提升成长幅度）
+  static double _betaFailure = 1.2; // 失败时稳定度重置
+  static double _gammaInterval = 1.0; // 间隔计算系数
+  static int _maxIntervalDays = 90; // 最大间隔天数
+
+  static double _clampDouble(double value, double min, double max) {
+    if (value < min) return min;
+    if (value > max) return max;
+    return value;
+  }
+
+  static int _clampInt(int value, int min, int max) {
+    if (value < min) return min;
+    if (value > max) return max;
+    return value;
+  }
+
+  static void updateConfig({
+    double? alphaStability,
+    double? betaFailure,
+    double? gammaInterval,
+    int? maxIntervalDays,
+  }) {
+    if (alphaStability != null) {
+      _alphaStability = _clampDouble(alphaStability, 0.05, 1.0);
+    }
+    if (betaFailure != null) {
+      _betaFailure = _clampDouble(betaFailure, 0.5, 5.0);
+    }
+    if (gammaInterval != null) {
+      _gammaInterval = _clampDouble(gammaInterval, 0.2, 5.0);
+    }
+    if (maxIntervalDays != null) {
+      _maxIntervalDays = _clampInt(maxIntervalDays, 1, 365);
+    }
+  }
 
   /// 计算质量分数
   /// 
   /// [result] 答题结果
   /// [reactionTime] 反应时间（毫秒）
   /// [timeLimit] 时间限制（毫秒）
+  /// [baselineRtMs] 用户/卡片的中位反应时间（可选，用于自适应阈值）
   /// 
   /// 返回质量分 q ∈ {1, 3, 4, 5}
   static int calculateQuality({
     required AttemptResult result,
     required int reactionTime,
     required int timeLimit,
+    int? baselineRtMs,
   }) {
     switch (result) {
       case AttemptResult.wrong:
@@ -26,14 +61,18 @@ class SrsAlgorithm {
         return 1; // 错误或超时
 
       case AttemptResult.correct:
-        // 根据反应时间细分
-        if (reactionTime <= timeLimit * 0.5) {
-          return 5; // 快对（反应时间 <= 50% 时限）
-        } else if (reactionTime > timeLimit * 0.8) {
-          return 3; // 慢对（反应时间 > 80% 时限）
-        } else {
-          return 4; // 普通对
+        final baseline = (baselineRtMs != null && baselineRtMs > 0)
+            ? baselineRtMs.toDouble()
+            : timeLimit.toDouble();
+        final fastThreshold = min(timeLimit * 0.5, baseline * 0.8);
+        final slowThreshold = max(timeLimit * 0.8, baseline * 1.2);
+
+        if (reactionTime <= fastThreshold) {
+          return 5; // 快对
+        } else if (reactionTime >= slowThreshold) {
+          return 3; // 慢对
         }
+        return 4; // 普通对
     }
   }
 
@@ -41,17 +80,23 @@ class SrsAlgorithm {
   /// 
   /// [currentState] 当前卡片状态
   /// [quality] 质量分数
+  /// [recallProb] 回忆概率估计（可选）
   /// 
   /// 返回更新后的卡片状态
-  static CardState updateCardState(CardState currentState, int quality) {
+  static CardState updateCardState(
+    CardState currentState,
+    int quality, {
+    double? recallProb,
+  }) {
     final newDifficulty = _updateDifficulty(currentState.difficulty, quality);
     final newStability = _updateStability(currentState.stability, quality);
-    final intervalDays = _calculateInterval(newStability, newDifficulty);
+    final adjustedStability = _adjustStabilityByRecall(newStability, quality, recallProb);
+    final intervalDays = _calculateInterval(adjustedStability, newDifficulty);
     // 加1小时缓冲，避免因毫秒级差导致 inDays 取整为0
     final newDue = DateTime.now().add(Duration(days: intervalDays, hours: 1));
     
     return currentState.updateSRS(
-      newStability: newStability,
+      newStability: adjustedStability,
       newDifficulty: newDifficulty,
       newDue: newDue,
       newRtP50: currentState.rtP50, // 暂时不更新，可在会话结束时批量更新
@@ -97,10 +142,10 @@ class SrsAlgorithm {
 
   /// 计算复习间隔（天数）
   /// 
-  /// I = γ * S' / D'，限制在 [1, 45] 天
+  /// I = γ * S' / D'，限制在 [1, maxIntervalDays] 天
   static int _calculateInterval(double stability, double difficulty) {
     final rawInterval = _gammaInterval * stability / difficulty;
-    return rawInterval.round().clamp(1, 90);
+    return rawInterval.round().clamp(1, _maxIntervalDays);
   }
 
   /// 批量更新卡片状态
@@ -131,16 +176,22 @@ class SrsAlgorithm {
       // 获取当前状态，如果不存在则创建新状态
       CardState currentState = states[wordId] ?? CardState.newCard(wordId);
       
-      // 依次处理每次答题
-      for (final attempt in wordAttempts) {
-        final quality = calculateQuality(
-          result: attempt.result,
-          reactionTime: attempt.rtMs,
-          timeLimit: timeLimit,
-        );
-        
-        currentState = updateCardState(currentState, quality);
-      }
+        // 依次处理每次答题
+        for (final attempt in wordAttempts) {
+          final quality = calculateQuality(
+            result: attempt.result,
+            reactionTime: attempt.rtMs,
+            timeLimit: timeLimit,
+            baselineRtMs: currentState.rtP50 > 0 ? currentState.rtP50 : null,
+          );
+          final recallProb = _estimateRecallProbability(currentState);
+
+          currentState = updateCardState(
+            currentState,
+            quality,
+            recallProb: recallProb,
+          );
+        }
       
       // 更新反应时间中位数
       final validRts = wordAttempts
@@ -161,6 +212,32 @@ class SrsAlgorithm {
     }
     
     return updatedStates;
+  }
+
+  /// 回忆概率估计
+  static double _estimateRecallProbability(CardState currentState) {
+    final hoursSinceReview = DateTime.now()
+        .difference(currentState.lastReview)
+        .inMinutes
+        .clamp(0, 60 * 24 * 365)
+        .toDouble();
+    final daysSinceReview = hoursSinceReview / (60 * 24);
+    final stability = max(0.5, currentState.stability);
+    final decay = daysSinceReview / stability;
+    return exp(-decay).clamp(0.0, 1.0);
+  }
+
+  static double _adjustStabilityByRecall(
+    double stability,
+    int quality,
+    double? recallProb,
+  ) {
+    if (recallProb == null) return stability;
+    final clampedRecall = recallProb.clamp(0.0, 1.0);
+    final factor = quality >= 3
+        ? 1 + (1 - clampedRecall) * 0.3
+        : 1 - clampedRecall * 0.2;
+    return (stability * factor).clamp(0.5, 120.0);
   }
 
   /// 获取今日牌组（到期词 + 不熟词）

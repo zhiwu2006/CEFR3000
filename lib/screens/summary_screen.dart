@@ -54,6 +54,7 @@ class SummaryScreen extends ConsumerWidget {
               // 清除测试进度
               await ref.read(appSettingsProvider.notifier).clearTestProgress();
               ref.invalidate(learningStatsProvider);
+              if (!context.mounted) return;
               Navigator.of(context).pushAndRemoveUntil(
                 MaterialPageRoute(builder: (_) => const HomeScreen()),
                 (route) => false,
@@ -94,7 +95,6 @@ class SummaryScreen extends ConsumerWidget {
     final wrongCount = sessionData.wrongAttempts.length;
     final slowCorrectCount = sessionData.slowCorrectAttempts.length;
     final warningColor = ThemeManager.getWarningColor(themeStyle);
-    final borderRadius = ThemeManager.getBorderRadius(themeStyle);
 
     return Card(
       child: Padding(
@@ -321,6 +321,7 @@ class SummaryScreen extends ConsumerWidget {
             // 清除测试进度
             await ref.read(appSettingsProvider.notifier).clearTestProgress();
             ref.invalidate(learningStatsProvider);
+            if (!context.mounted) return;
             Navigator.of(context).pushAndRemoveUntil(
               MaterialPageRoute(builder: (_) => const HomeScreen()),
               (route) => false,
@@ -346,6 +347,7 @@ class SummaryScreen extends ConsumerWidget {
   Future<void> _practiceWrongWords(BuildContext context, WidgetRef ref, SessionData sessionData) async {
     // 清除之前的测试进度
     await ref.read(appSettingsProvider.notifier).clearTestProgress();
+    if (!context.mounted) return;
     
     final wrongWordIds = sessionData.wrongAttempts.map((a) => a.wordId).toSet();
     final config = sessionData.config.copyWith(
@@ -360,6 +362,7 @@ class SummaryScreen extends ConsumerWidget {
   Future<void> _startNewTest(BuildContext context, WidgetRef ref, SessionData sessionData) async {
     // 清除之前的测试进度
     await ref.read(appSettingsProvider.notifier).clearTestProgress();
+    if (!context.mounted) return;
     
     Navigator.of(context).pushReplacement(
       MaterialPageRoute(builder: (_) => TestScreen(config: sessionData.config)),
@@ -377,6 +380,12 @@ extension SessionConfigCopyWith on SessionConfig {
     int? wrongDelay,
     int? slowDelay,
     double? slowThreshold,
+    double? newCardRatio,
+    int? dailyNewLimit,
+    bool? ttsAutoPlay,
+    bool? ttsOnWrong,
+    int? leechLapsesThreshold,
+    bool? leechIncludeMarked,
   }) {
     return SessionConfig(
       levels: levels ?? this.levels,
@@ -387,6 +396,12 @@ extension SessionConfigCopyWith on SessionConfig {
       wrongDelay: wrongDelay ?? this.wrongDelay,
       slowDelay: slowDelay ?? this.slowDelay,
       slowThreshold: slowThreshold ?? this.slowThreshold,
+      newCardRatio: newCardRatio ?? this.newCardRatio,
+      dailyNewLimit: dailyNewLimit ?? this.dailyNewLimit,
+      ttsAutoPlay: ttsAutoPlay ?? this.ttsAutoPlay,
+      ttsOnWrong: ttsOnWrong ?? this.ttsOnWrong,
+      leechLapsesThreshold: leechLapsesThreshold ?? this.leechLapsesThreshold,
+      leechIncludeMarked: leechIncludeMarked ?? this.leechIncludeMarked,
     );
   }
 }

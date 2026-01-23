@@ -33,13 +33,27 @@ class AppSettingsAdapter extends TypeAdapter<AppSettings> {
       totalWords: fields[13] as int,
       remainingWordIds: (fields[14] as List).cast<int>(),
       themeStyle: fields[15] as String,
+      slowThreshold: fields[16] as double,
+      leechWordsPerSession: fields[17] as int,
+      newCardRatio: fields[18] as double,
+      dailyNewLimit: fields[19] as int,
+      leechLapsesThreshold: fields[20] as int,
+      leechIncludeMarked: fields[21] as bool,
+      ttsAutoPlay: fields[22] as bool,
+      ttsOnWrong: fields[23] as bool,
+      srsAlphaStability: fields[24] as double,
+      srsBetaFailure: fields[25] as double,
+      srsGammaInterval: fields[26] as double,
+      srsMaxIntervalDays: fields[27] as int,
+      dailyNewDate: fields[28] as String,
+      dailyNewUsed: fields[29] as int,
     );
   }
 
   @override
   void write(BinaryWriter writer, AppSettings obj) {
     writer
-      ..writeByte(16)
+      ..writeByte(30)
       ..writeByte(0)
       ..write(obj.selectedLevels)
       ..writeByte(1)
@@ -71,7 +85,35 @@ class AppSettingsAdapter extends TypeAdapter<AppSettings> {
       ..writeByte(14)
       ..write(obj.remainingWordIds)
       ..writeByte(15)
-      ..write(obj.themeStyle);
+      ..write(obj.themeStyle)
+      ..writeByte(16)
+      ..write(obj.slowThreshold)
+      ..writeByte(17)
+      ..write(obj.leechWordsPerSession)
+      ..writeByte(18)
+      ..write(obj.newCardRatio)
+      ..writeByte(19)
+      ..write(obj.dailyNewLimit)
+      ..writeByte(20)
+      ..write(obj.leechLapsesThreshold)
+      ..writeByte(21)
+      ..write(obj.leechIncludeMarked)
+      ..writeByte(22)
+      ..write(obj.ttsAutoPlay)
+      ..writeByte(23)
+      ..write(obj.ttsOnWrong)
+      ..writeByte(24)
+      ..write(obj.srsAlphaStability)
+      ..writeByte(25)
+      ..write(obj.srsBetaFailure)
+      ..writeByte(26)
+      ..write(obj.srsGammaInterval)
+      ..writeByte(27)
+      ..write(obj.srsMaxIntervalDays)
+      ..writeByte(28)
+      ..write(obj.dailyNewDate)
+      ..writeByte(29)
+      ..write(obj.dailyNewUsed);
   }
 
   @override
@@ -155,6 +197,23 @@ AppSettings _$AppSettingsFromJson(Map<String, dynamic> json) => AppSettings(
               .toList() ??
           const [],
       themeStyle: json['themeStyle'] as String? ?? 'standard',
+      slowThreshold: (json['slowThreshold'] as num?)?.toDouble() ?? 1.5,
+      leechWordsPerSession:
+          (json['leechWordsPerSession'] as num?)?.toInt() ?? 30,
+      newCardRatio: (json['newCardRatio'] as num?)?.toDouble() ?? 0.25,
+      dailyNewLimit: (json['dailyNewLimit'] as num?)?.toInt() ?? 30,
+      leechLapsesThreshold:
+          (json['leechLapsesThreshold'] as num?)?.toInt() ?? 2,
+      leechIncludeMarked: json['leechIncludeMarked'] as bool? ?? true,
+      ttsAutoPlay: json['ttsAutoPlay'] as bool? ?? true,
+      ttsOnWrong: json['ttsOnWrong'] as bool? ?? false,
+      srsAlphaStability:
+          (json['srsAlphaStability'] as num?)?.toDouble() ?? 0.18,
+      srsBetaFailure: (json['srsBetaFailure'] as num?)?.toDouble() ?? 1.2,
+      srsGammaInterval: (json['srsGammaInterval'] as num?)?.toDouble() ?? 1.0,
+      srsMaxIntervalDays: (json['srsMaxIntervalDays'] as num?)?.toInt() ?? 90,
+      dailyNewDate: json['dailyNewDate'] as String? ?? '',
+      dailyNewUsed: (json['dailyNewUsed'] as num?)?.toInt() ?? 0,
     );
 
 Map<String, dynamic> _$AppSettingsToJson(AppSettings instance) =>
@@ -175,6 +234,20 @@ Map<String, dynamic> _$AppSettingsToJson(AppSettings instance) =>
       'totalWords': instance.totalWords,
       'remainingWordIds': instance.remainingWordIds,
       'themeStyle': instance.themeStyle,
+      'slowThreshold': instance.slowThreshold,
+      'leechWordsPerSession': instance.leechWordsPerSession,
+      'newCardRatio': instance.newCardRatio,
+      'dailyNewLimit': instance.dailyNewLimit,
+      'leechLapsesThreshold': instance.leechLapsesThreshold,
+      'leechIncludeMarked': instance.leechIncludeMarked,
+      'ttsAutoPlay': instance.ttsAutoPlay,
+      'ttsOnWrong': instance.ttsOnWrong,
+      'srsAlphaStability': instance.srsAlphaStability,
+      'srsBetaFailure': instance.srsBetaFailure,
+      'srsGammaInterval': instance.srsGammaInterval,
+      'srsMaxIntervalDays': instance.srsMaxIntervalDays,
+      'dailyNewDate': instance.dailyNewDate,
+      'dailyNewUsed': instance.dailyNewUsed,
     };
 
 const _$DelayProfileEnumMap = {

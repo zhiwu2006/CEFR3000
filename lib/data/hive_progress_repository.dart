@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:hive/hive.dart';
 import '../models/models.dart';
 import 'progress_repository.dart';
@@ -8,6 +9,7 @@ class HiveProgressRepository implements ProgressRepository {
   static const String _cardStateBoxName = 'card_states';
   static const String _testRunBoxName = 'test_runs';
   static const String _attemptBoxName = 'attempts';
+  static const int _exportVersion = 1;
 
   late Box<CardState> _cardStateBox;
   late Box<TestRun> _testRunBox;
@@ -20,15 +22,24 @@ class HiveProgressRepository implements ProgressRepository {
   /// 初始化
   Future<void> init() async {
     // 注册适配器
-    if (!Hive.isAdapterRegistered(1)) Hive.registerAdapter(AttemptAdapter());
-    if (!Hive.isAdapterRegistered(2)) Hive.registerAdapter(CardStateAdapter());
-    if (!Hive.isAdapterRegistered(3)) Hive.registerAdapter(TestRunAdapter());
-    if (!Hive.isAdapterRegistered(4))
+    if (!Hive.isAdapterRegistered(1)) {
+      Hive.registerAdapter(AttemptAdapter());
+    }
+    if (!Hive.isAdapterRegistered(2)) {
+      Hive.registerAdapter(CardStateAdapter());
+    }
+    if (!Hive.isAdapterRegistered(3)) {
+      Hive.registerAdapter(TestRunAdapter());
+    }
+    if (!Hive.isAdapterRegistered(4)) {
       Hive.registerAdapter(AttemptResultAdapter());
-    if (!Hive.isAdapterRegistered(5))
+    }
+    if (!Hive.isAdapterRegistered(5)) {
       Hive.registerAdapter(DelayProfileAdapter());
-    if (!Hive.isAdapterRegistered(6))
+    }
+    if (!Hive.isAdapterRegistered(6)) {
       Hive.registerAdapter(AppSettingsAdapter());
+    }
 
     // 打开boxes
     _cardStateBox = await Hive.openBox<CardState>(_cardStateBoxName);
@@ -68,7 +79,6 @@ class HiveProgressRepository implements ProgressRepository {
 
   @override
   Future<List<Word>> getDueWords(Set<String> levels) async {
-    final now = DateTime.now();
     final dueWordIds = <int>[];
 
     // 找出所有到期的卡片
@@ -127,6 +137,23 @@ class HiveProgressRepository implements ProgressRepository {
   }
 
   @override
+  Future<void> markWordKnown(int wordId) async {
+    final now = DateTime.now();
+    final currentState = _cardStateBox.get(wordId);
+    final updatedState = CardState(
+      wordId: wordId,
+      stability: 20.0,
+      difficulty: 1.6,
+      due: now.add(const Duration(days: 30)),
+      lapses: 0,
+      rtP50: currentState?.rtP50 ?? 0,
+      flags: 0,
+      lastReview: now,
+    );
+    await _cardStateBox.put(wordId, updatedState);
+  }
+
+  @override
   Future<void> markWordDifficult(int wordId) async {
     final currentState = _cardStateBox.get(wordId) ?? CardState.newCard(wordId);
     final markedState = currentState.markDifficult();
@@ -171,14 +198,18 @@ class HiveProgressRepository implements ProgressRepository {
     final words = await _wordRepository.loadByLevels(levels);
     final result = <WordStudyStatus>[];
 
+    final attemptCountsByWord = <int, int>{};
+    for (final attempt in _attemptBox.values) {
+      attemptCountsByWord.update(attempt.wordId, (count) => count + 1, ifAbsent: () => 1);
+    }
+
     for (final word in words) {
       final state = _cardStateBox.get(word.id);
-      final attempts = _attemptBox.values.where((a) => a.wordId == word.id);
       result.add(
         WordStudyStatus(
           word: word,
           state: state,
-          attemptCount: attempts.length,
+          attemptCount: attemptCountsByWord[word.id] ?? 0,
         ),
       );
     }
@@ -320,6 +351,7 @@ class HiveProgressRepository implements ProgressRepository {
   }
 
   /// 获取指定天数的每日统计数据
+  @override
   Future<List<Map<String, dynamic>>> getDailyStats(int days) async {
     final now = DateTime.now();
     final today = DateTime(now.year, now.month, now.day);
@@ -392,6 +424,7 @@ class HiveProgressRepository implements ProgressRepository {
   }
   
   /// 获取指定级别的进度
+  @override
   Future<Map<String, int>> getLevelProgress(Set<String> levels) async {
     // 1. 获取级别总词数
     final allWords = await _wordRepository.loadByLevels(levels);
@@ -480,8 +513,24 @@ class HiveProgressRepository implements ProgressRepository {
   }
 
   @override
+  Future<void> clearTestRuns() async {
+    await _testRunBox.clear();
+  }
+
+  @override
+  Future<void> clearAttempts() async {
+    await _attemptBox.clear();
+  }
+
+  @override
+  Future<void> clearCardStates() async {
+    await _cardStateBox.clear();
+  }
+
+  @override
   Future<Map<String, dynamic>> exportProgress() async {
     return {
+      'version': _exportVersion,
       'cardStates': _cardStateBox.values
           .map((state) => state.toJson())
           .toList(),
@@ -495,6 +544,10 @@ class HiveProgressRepository implements ProgressRepository {
 
   @override
   Future<void> importProgress(Map<String, dynamic> data) async {
+    final version = data['version'] is int ? data['version'] as int : 0;
+    if (version > _exportVersion) {
+      debugPrint('Warning: import data version $version is newer than supported $_exportVersion');
+    }
     await clearAllProgress();
 
     // 导入卡片状态

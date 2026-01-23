@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:hive/hive.dart';
 import '../models/models.dart';
@@ -13,32 +14,33 @@ class HiveWordRepository implements WordRepository {
   /// 初始化
   Future<void> init() async {
     try {
-      print('Registering Word adapter...');
+      debugPrint('Registering Word adapter...');
       if (!Hive.isAdapterRegistered(0)) {
         Hive.registerAdapter(WordAdapter());
       }
       
-      print('Opening words box...');
+      debugPrint('Opening words box...');
       _box = await Hive.openBox<Word>(_boxName);
-      print('Words box opened, contains ${_box.length} words');
+      debugPrint('Words box opened, contains ${_box.length} words');
       
       // 如果box为空，则从assets加载
       if (_box.isEmpty) {
-        print('Words box is empty, loading from assets...');
+        debugPrint('Words box is empty, loading from assets...');
         await _loadFromAssets();
       } else {
-        print('Words already loaded from previous session');
+        debugPrint('Words already loaded from previous session');
       }
     } catch (e, stackTrace) {
-      print('Error in HiveWordRepository.init(): $e');
-      print('Stack trace: $stackTrace');
+      debugPrint('Error in HiveWordRepository.init(): $e');
+      debugPrint('Stack trace: $stackTrace');
       rethrow;
     }
   }
 
   /// 强制重新加载词汇数据（清除旧数据并重新从assets加载）
+  @override
   Future<void> forceReload() async {
-    print('Force reloading words from assets...');
+    debugPrint('Force reloading words from assets...');
     
     // 清除旧数据
     await _box.clear();
@@ -62,9 +64,9 @@ class HiveWordRepository implements WordRepository {
       final Map<int, Word> wordMap = {for (var word in words) word.id: word};
       await _box.putAll(wordMap);
       
-      print('Loaded ${words.length} words from assets');
+      debugPrint('Loaded ${words.length} words from assets');
     } catch (e) {
-      print('Error loading words from assets: $e');
+      debugPrint('Error loading words from assets: $e');
       rethrow;
     }
   }

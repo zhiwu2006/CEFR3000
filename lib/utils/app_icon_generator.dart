@@ -1,7 +1,7 @@
+import 'dart:math' as math;
 import 'dart:ui' as ui;
 import 'dart:typed_data';
 import 'package:flutter/material.dart';
-import 'package:flutter/rendering.dart';
 
 /// 应用图标生成器
 class AppIconGenerator {
@@ -66,7 +66,7 @@ class AppIconGenerator {
 
     // 添加阴影
     final shadowPaint = Paint()
-      ..color = Colors.black.withOpacity(0.2)
+      ..color = Colors.black.withValues(alpha: 0.2)
       ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 8);
 
     canvas.drawRRect(
@@ -86,7 +86,7 @@ class AppIconGenerator {
       Radius.circular(size * 0.05),
     );
 
-    final bgPaint = Paint()..color = cardColor.withOpacity(0.8);
+    final bgPaint = Paint()..color = cardColor.withValues(alpha: 0.8);
 
     canvas.drawRRect(bgCardRect, bgPaint);
   }
@@ -129,7 +129,7 @@ class AppIconGenerator {
   /// 绘制装饰元素
   static void _drawDecorations(Canvas canvas, double size, Color accentColor) {
     final paint = Paint()
-      ..color = accentColor.withOpacity(0.6)
+      ..color = accentColor.withValues(alpha: 0.6)
       ..style = PaintingStyle.fill;
 
     // 左上角装饰
@@ -156,43 +156,22 @@ class AppIconGenerator {
     Color color,
   ) {
     final paint = Paint()
-      ..color = color.withOpacity(0.8)
+      ..color = color.withValues(alpha: 0.8)
       ..style = PaintingStyle.fill;
 
     final path = Path();
     const int points = 5;
-    const double angle = (2 * 3.14159) / points;
+    const double angle = (2 * math.pi) / points;
 
     for (int i = 0; i < points; i++) {
-      final double x =
-          center.dx +
-          radius *
-              0.8 *
-              (i % 2 == 0 ? 1 : 0.4) *
-              (i == 0
-                  ? 1
-                  : (i % 2 == 0
-                        ? (3.14159 / 180 * (72 * (i ~/ 2))).cos()
-                        : (3.14159 / 180 * (72 * (i ~/ 2) + 36)).cos()));
-      final double y =
-          center.dy +
-          radius *
-              0.8 *
-              (i % 2 == 0 ? 1 : 0.4) *
-              (i == 0
-                  ? 0
-                  : (i % 2 == 0
-                        ? (3.14159 / 180 * (72 * (i ~/ 2))).sin()
-                        : (3.14159 / 180 * (72 * (i ~/ 2) + 36)).sin()));
-
       if (i == 0) {
         path.moveTo(center.dx, center.dy - radius);
       } else {
-        final double currentAngle = angle * i - 3.14159 / 2;
+        final double currentAngle = angle * i - math.pi / 2;
         final double currentRadius = i % 2 == 0 ? radius : radius * 0.4;
         path.lineTo(
-          center.dx + currentRadius * currentAngle.cos(),
-          center.dy + currentRadius * currentAngle.sin(),
+          center.dx + currentRadius * math.cos(currentAngle),
+          center.dy + currentRadius * math.sin(currentAngle),
         );
       }
     }

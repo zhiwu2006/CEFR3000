@@ -40,13 +40,11 @@ class NatureTheme {
         secondary: secondaryGreen,
         tertiary: accentBrown,
         surface: surface,
-        background: background,
         error: wrongColor,
         onPrimary: Colors.white,
         onSecondary: Colors.white,
         onTertiary: Colors.white,
         onSurface: textPrimary,
-        onBackground: textPrimary,
         outline: border,
       ),
 
@@ -68,7 +66,7 @@ class NatureTheme {
       cardTheme: CardThemeData(
         color: surface,
         elevation: 2,
-        shadowColor: accentBrown.withOpacity(0.15),
+        shadowColor: accentBrown.withValues(alpha: 0.15),
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(16),
         ),
@@ -81,7 +79,7 @@ class NatureTheme {
           backgroundColor: primaryGreen,
           foregroundColor: Colors.white,
           elevation: 2,
-          shadowColor: primaryGreen.withOpacity(0.3),
+        shadowColor: primaryGreen.withValues(alpha: 0.3),
           padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 14),
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(24),
@@ -134,7 +132,7 @@ class NatureTheme {
 
       // 分割线
       dividerTheme: DividerThemeData(
-        color: border.withOpacity(0.7),
+        color: border.withValues(alpha: 0.7),
         thickness: 1,
         space: 1,
       ),
@@ -142,7 +140,7 @@ class NatureTheme {
       // Chip
       chipTheme: ChipThemeData(
         backgroundColor: surface,
-        selectedColor: secondaryGreen.withOpacity(0.15),
+        selectedColor: secondaryGreen.withValues(alpha: 0.15),
         side: BorderSide(color: border, width: 1),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
         labelStyle: const TextStyle(
@@ -157,7 +155,7 @@ class NatureTheme {
         activeTrackColor: secondaryGreen,
         inactiveTrackColor: border,
         thumbColor: primaryGreen,
-        overlayColor: primaryGreen.withOpacity(0.15),
+        overlayColor: primaryGreen.withValues(alpha: 0.15),
         trackHeight: 6,
         thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 10),
       ),

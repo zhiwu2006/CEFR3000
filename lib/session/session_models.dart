@@ -38,6 +38,12 @@ class SessionConfig {
   final int wrongDelay;     // 错题延迟
   final int slowDelay;      // 勉强正确延迟
   final double slowThreshold; // 勉强正确阈值（倍数）
+  final double newCardRatio; // 新卡比例
+  final int dailyNewLimit; // 每日新卡上限
+  final bool ttsAutoPlay; // 自动发音
+  final bool ttsOnWrong; // 错题回放发音
+  final int leechLapsesThreshold; // 失忆次数阈值
+  final bool leechIncludeMarked; // 是否包含疑难标记
 
   const SessionConfig({
     required this.levels,
@@ -48,19 +54,50 @@ class SessionConfig {
     required this.wrongDelay,
     required this.slowDelay,
     required this.slowThreshold,
+    required this.newCardRatio,
+    required this.dailyNewLimit,
+    required this.ttsAutoPlay,
+    required this.ttsOnWrong,
+    required this.leechLapsesThreshold,
+    required this.leechIncludeMarked,
   });
+
+  static int _clampInt(int value, int min, int max) {
+    if (value < min) return min;
+    if (value > max) return max;
+    return value;
+  }
+
+  static double _clampDouble(double value, double min, double max) {
+    if (value < min) return min;
+    if (value > max) return max;
+    return value;
+  }
 
   factory SessionConfig.fromAppSettings(AppSettings settings) {
     final delayConfig = settings.delayConfig;
+    final levels = settings.selectedLevelsSet.isEmpty
+        ? {'A1'}
+        : settings.selectedLevelsSet;
+    final orderPolicy =
+        (settings.orderPolicy == 'by_level' || settings.orderPolicy == 'random')
+            ? settings.orderPolicy
+            : 'by_level';
     return SessionConfig(
-      levels: settings.selectedLevelsSet,
-      wordsPerSession: settings.wordsPerSession,
-      timeLimitMs: settings.timeLimitMs,
-      orderPolicy: settings.orderPolicy,
+      levels: levels,
+      wordsPerSession: _clampInt(settings.wordsPerSession, 1, 1000),
+      timeLimitMs: _clampInt(settings.timeLimitMs, 500, 30000),
+      orderPolicy: orderPolicy,
       onlyLeeches: settings.onlyLeeches,
-      wrongDelay: delayConfig.wrongDelay,
-      slowDelay: delayConfig.slowDelay,
-      slowThreshold: settings.slowThreshold,
+      wrongDelay: _clampInt(delayConfig.wrongDelay, 1, 20),
+      slowDelay: _clampInt(delayConfig.slowDelay, 1, 20),
+      slowThreshold: _clampDouble(settings.slowThreshold, 1.0, 3.0),
+      newCardRatio: _clampDouble(settings.newCardRatio, 0.0, 1.0),
+      dailyNewLimit: _clampInt(settings.dailyNewLimit, 0, 500),
+      ttsAutoPlay: settings.ttsAutoPlay,
+      ttsOnWrong: settings.ttsOnWrong,
+      leechLapsesThreshold: _clampInt(settings.leechLapsesThreshold, 1, 10),
+      leechIncludeMarked: settings.leechIncludeMarked,
     );
   }
 

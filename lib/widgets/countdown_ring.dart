@@ -80,8 +80,6 @@ class _CountdownRingState extends State<CountdownRing>
     final theme = Theme.of(context);
     final themeStyle = widget.themeStyle ?? 
         (widget.isHighContrast ? ThemeStyle.highContrast : ThemeStyle.standard);
-    final isDark = ThemeManager.isDarkTheme(themeStyle);
-    
     final progressColor = widget.progressColor ?? 
         _getProgressColor(progress, themeStyle);
     final bgColor = widget.backgroundColor ?? 
@@ -129,10 +127,8 @@ class _CountdownRingState extends State<CountdownRing>
 
   Widget _buildCenterText(BuildContext context, ThemeData theme, double progress, ThemeStyle themeStyle) {
     final remainingSeconds = (widget.remainingTimeMs / 1000).ceil();
-    final totalSeconds = (widget.totalTimeMs / 1000).ceil();
     final isDark = ThemeManager.isDarkTheme(themeStyle);
     final textColor = ThemeManager.getTextColor(themeStyle);
-    final correctColor = ThemeManager.getCorrectColor(themeStyle);
     final warningColor = ThemeManager.getWarningColor(themeStyle);
     final wrongColor = ThemeManager.getWrongColor(themeStyle);
     
@@ -254,7 +250,7 @@ class SimpleCountdownRing extends StatelessWidget {
         value: progress,
         strokeWidth: strokeWidth,
         valueColor: AlwaysStoppedAnimation<Color>(progressColor),
-        backgroundColor: progressColor.withOpacity(0.2),
+        backgroundColor: progressColor.withValues(alpha: 0.2),
       ),
     );
   }

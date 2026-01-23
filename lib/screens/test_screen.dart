@@ -70,7 +70,10 @@ class _TestScreenState extends ConsumerState<TestScreen>
 
   @override
   void dispose() {
-    _sessionController?.stopSession();
+    final sessionController = _sessionController;
+    if (sessionController != null) {
+      Future.microtask(sessionController.stopSession);
+    }
     WidgetsBinding.instance.removeObserver(this);
     super.dispose();
   }
@@ -85,16 +88,25 @@ class _TestScreenState extends ConsumerState<TestScreen>
     switch (state) {
       case AppLifecycleState.paused:
       case AppLifecycleState.inactive:
-        sessionController.pauseSession();
+        Future.microtask(() {
+          if (!mounted) return;
+          sessionController.pauseSession();
+        });
         break;
       case AppLifecycleState.resumed:
-        sessionController.resumeSession();
+        Future.microtask(() {
+          if (!mounted) return;
+          sessionController.resumeSession();
+        });
         break;
       case AppLifecycleState.detached:
-        sessionController.stopSession();
+        Future.microtask(sessionController.stopSession);
         break;
       case AppLifecycleState.hidden:
-        sessionController.pauseSession();
+        Future.microtask(() {
+          if (!mounted) return;
+          sessionController.pauseSession();
+        });
         break;
     }
   }
@@ -302,7 +314,7 @@ class _TestScreenState extends ConsumerState<TestScreen>
                             GestureDetector(
                               onTap: () {
                                 final controller = ref.read(sessionControllerProvider.notifier);
-                                print('Pause button tapped, isPaused=$isPaused, state=${currentSessionData.state}');
+        debugPrint('Pause button tapped, isPaused=$isPaused, state=${currentSessionData.state}');
                                 if (isPaused) {
                                   controller.resumeSession();
                                 } else {
@@ -512,7 +524,7 @@ class _TestScreenState extends ConsumerState<TestScreen>
                             GestureDetector(
                               onTap: () {
                                 final controller = ref.read(sessionControllerProvider.notifier);
-                                print('Tablet pause button tapped, isPaused=$isPaused, state=${currentSessionData.state}');
+        debugPrint('Tablet pause button tapped, isPaused=$isPaused, state=${currentSessionData.state}');
                                 if (isPaused) {
                                   controller.resumeSession();
                                 } else {

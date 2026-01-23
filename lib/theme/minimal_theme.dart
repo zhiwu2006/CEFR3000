@@ -34,12 +34,10 @@ class MinimalTheme {
         primary: accent,
         secondary: primary,
         surface: surface,
-        background: background,
         error: wrongColor,
         onPrimary: Colors.white,
         onSecondary: Colors.white,
         onSurface: textPrimary,
-        onBackground: textPrimary,
         outline: border,
       ),
 
@@ -64,7 +62,7 @@ class MinimalTheme {
         elevation: 0,
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(16),
-          side: BorderSide(color: border.withOpacity(0.5), width: 1),
+        side: BorderSide(color: border.withValues(alpha: 0.5), width: 1),
         ),
         margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       ),
@@ -129,7 +127,7 @@ class MinimalTheme {
 
       // 分割线
       dividerTheme: DividerThemeData(
-        color: border.withOpacity(0.5),
+        color: border.withValues(alpha: 0.5),
         thickness: 1,
         space: 1,
       ),
@@ -137,7 +135,7 @@ class MinimalTheme {
       // Chip
       chipTheme: ChipThemeData(
         backgroundColor: surface,
-        selectedColor: accent.withOpacity(0.1),
+        selectedColor: accent.withValues(alpha: 0.1),
         side: BorderSide(color: border, width: 1),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
         labelStyle: const TextStyle(
@@ -152,7 +150,7 @@ class MinimalTheme {
         activeTrackColor: accent,
         inactiveTrackColor: border,
         thumbColor: accent,
-        overlayColor: accent.withOpacity(0.1),
+        overlayColor: accent.withValues(alpha: 0.1),
         trackHeight: 4,
         thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 8),
       ),
@@ -164,7 +162,9 @@ class MinimalTheme {
           return Colors.white;
         }),
         trackColor: WidgetStateProperty.resolveWith((states) {
-          if (states.contains(WidgetState.selected)) return accent.withOpacity(0.5);
+    if (states.contains(WidgetState.selected)) {
+      return accent.withValues(alpha: 0.5);
+    }
           return border;
         }),
       ),

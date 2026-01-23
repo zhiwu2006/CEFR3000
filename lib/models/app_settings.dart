@@ -71,6 +71,48 @@ class AppSettings {
   @HiveField(15)
   final String themeStyle; // 主题风格：standard, highContrast, bauhaus, minimal, nature
 
+  @HiveField(16)
+  final double slowThreshold; // 勉强正确阈值（倍数）
+
+  @HiveField(17)
+  final int leechWordsPerSession; // 不熟悉单词默认每轮数量
+
+  @HiveField(18)
+  final double newCardRatio; // 新卡比例（0-1）
+
+  @HiveField(19)
+  final int dailyNewLimit; // 每日新卡上限
+
+  @HiveField(20)
+  final int leechLapsesThreshold; // 失忆次数阈值
+
+  @HiveField(21)
+  final bool leechIncludeMarked; // 是否包含手动标记疑难
+
+  @HiveField(22)
+  final bool ttsAutoPlay; // 自动发音
+
+  @HiveField(23)
+  final bool ttsOnWrong; // 错题回放发音
+
+  @HiveField(24)
+  final double srsAlphaStability; // SRS 稳定度增长系数
+
+  @HiveField(25)
+  final double srsBetaFailure; // SRS 失败稳定度下限
+
+  @HiveField(26)
+  final double srsGammaInterval; // SRS 间隔系数
+
+  @HiveField(27)
+  final int srsMaxIntervalDays; // SRS 最大间隔天数
+
+  @HiveField(28)
+  final String dailyNewDate; // 新卡计数日期
+
+  @HiveField(29)
+  final int dailyNewUsed; // 今日已用新卡数
+
   const AppSettings({
     required this.selectedLevels,
     required this.wordsPerSession,
@@ -88,6 +130,20 @@ class AppSettings {
     this.totalWords = 0,
     this.remainingWordIds = const [],
     this.themeStyle = 'standard',
+    this.slowThreshold = 1.5,
+    this.leechWordsPerSession = 30,
+    this.newCardRatio = 0.25,
+    this.dailyNewLimit = 30,
+    this.leechLapsesThreshold = 2,
+    this.leechIncludeMarked = true,
+    this.ttsAutoPlay = true,
+    this.ttsOnWrong = false,
+    this.srsAlphaStability = 0.18,
+    this.srsBetaFailure = 1.2,
+    this.srsGammaInterval = 1.0,
+    this.srsMaxIntervalDays = 90,
+    this.dailyNewDate = '',
+    this.dailyNewUsed = 0,
   });
 
   factory AppSettings.fromJson(Map<String, dynamic> json) => _$AppSettingsFromJson(json);
@@ -111,6 +167,20 @@ class AppSettings {
         totalWords: 0,
         remainingWordIds: [],
         themeStyle: 'standard',
+        slowThreshold: 1.5,
+        leechWordsPerSession: 30,
+        newCardRatio: 0.25,
+        dailyNewLimit: 30,
+        leechLapsesThreshold: 2,
+        leechIncludeMarked: true,
+        ttsAutoPlay: true,
+        ttsOnWrong: false,
+        srsAlphaStability: 0.18,
+        srsBetaFailure: 1.2,
+        srsGammaInterval: 1.0,
+        srsMaxIntervalDays: 90,
+        dailyNewDate: '',
+        dailyNewUsed: 0,
       );
 
   /// 获取延迟配置
@@ -124,9 +194,6 @@ class AppSettings {
         return (wrongDelay: 5, slowDelay: 7);
     }
   }
-
-  /// 获取勉强正确的时间阈值（倍数）
-  double get slowThreshold => 1.5;
 
   /// 是否为可访问性模式（延长时限）
   bool get isAccessibilityMode => timeLimitMs >= 6000;
@@ -150,6 +217,20 @@ class AppSettings {
     int? totalWords,
     List<int>? remainingWordIds,
     String? themeStyle,
+    double? slowThreshold,
+    int? leechWordsPerSession,
+    double? newCardRatio,
+    int? dailyNewLimit,
+    int? leechLapsesThreshold,
+    bool? leechIncludeMarked,
+    bool? ttsAutoPlay,
+    bool? ttsOnWrong,
+    double? srsAlphaStability,
+    double? srsBetaFailure,
+    double? srsGammaInterval,
+    int? srsMaxIntervalDays,
+    String? dailyNewDate,
+    int? dailyNewUsed,
   }) =>
       AppSettings(
         selectedLevels: selectedLevels?.toList() ?? this.selectedLevels,
@@ -170,6 +251,20 @@ class AppSettings {
         totalWords: totalWords ?? this.totalWords,
         remainingWordIds: remainingWordIds ?? this.remainingWordIds,
         themeStyle: themeStyle ?? this.themeStyle,
+        slowThreshold: slowThreshold ?? this.slowThreshold,
+        leechWordsPerSession: leechWordsPerSession ?? this.leechWordsPerSession,
+        newCardRatio: newCardRatio ?? this.newCardRatio,
+        dailyNewLimit: dailyNewLimit ?? this.dailyNewLimit,
+        leechLapsesThreshold: leechLapsesThreshold ?? this.leechLapsesThreshold,
+        leechIncludeMarked: leechIncludeMarked ?? this.leechIncludeMarked,
+        ttsAutoPlay: ttsAutoPlay ?? this.ttsAutoPlay,
+        ttsOnWrong: ttsOnWrong ?? this.ttsOnWrong,
+        srsAlphaStability: srsAlphaStability ?? this.srsAlphaStability,
+        srsBetaFailure: srsBetaFailure ?? this.srsBetaFailure,
+        srsGammaInterval: srsGammaInterval ?? this.srsGammaInterval,
+        srsMaxIntervalDays: srsMaxIntervalDays ?? this.srsMaxIntervalDays,
+        dailyNewDate: dailyNewDate ?? this.dailyNewDate,
+        dailyNewUsed: dailyNewUsed ?? this.dailyNewUsed,
       );
 
   @override

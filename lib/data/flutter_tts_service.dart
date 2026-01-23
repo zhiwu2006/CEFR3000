@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter_tts/flutter_tts.dart';
 import 'tts_service.dart';
 
@@ -29,7 +30,7 @@ class FlutterTtsService implements TtsService {
     
     _flutterTts.setErrorHandler((msg) {
       _isPlaying = false;
-      print('TTS Error: $msg');
+      debugPrint('TTS Error: $msg');
     });
 
     _isInitialized = true;
@@ -44,7 +45,7 @@ class FlutterTtsService implements TtsService {
     try {
       await _flutterTts.speak(text);
     } catch (e) {
-      print('TTS speak error: $e');
+      debugPrint('TTS speak error: $e');
       // 发音失败不阻塞应用
     }
   }
@@ -57,7 +58,7 @@ class FlutterTtsService implements TtsService {
       await _flutterTts.stop();
       _isPlaying = false;
     } catch (e) {
-      print('TTS stop error: $e');
+      debugPrint('TTS stop error: $e');
     }
   }
 
@@ -70,7 +71,7 @@ class FlutterTtsService implements TtsService {
       final clampedRate = rate.clamp(0.1, 1.0);
       await _flutterTts.setSpeechRate(clampedRate);
     } catch (e) {
-      print('TTS setSpeechRate error: $e');
+      debugPrint('TTS setSpeechRate error: $e');
     }
   }
 
@@ -83,7 +84,7 @@ class FlutterTtsService implements TtsService {
       final clampedPitch = pitch.clamp(0.5, 2.0);
       await _flutterTts.setPitch(clampedPitch);
     } catch (e) {
-      print('TTS setPitch error: $e');
+      debugPrint('TTS setPitch error: $e');
     }
   }
 
@@ -94,7 +95,7 @@ class FlutterTtsService implements TtsService {
     try {
       await _flutterTts.setLanguage(locale);
     } catch (e) {
-      print('TTS setLanguage error: $e');
+      debugPrint('TTS setLanguage error: $e');
     }
   }
 
@@ -110,7 +111,7 @@ class FlutterTtsService implements TtsService {
         return languages.cast<String>();
       }
     } catch (e) {
-      print('TTS getAvailableLanguages error: $e');
+      debugPrint('TTS getAvailableLanguages error: $e');
     }
     
     // 返回常见语言作为fallback
@@ -134,7 +135,7 @@ class FlutterTtsService implements TtsService {
       await stop();
       // FlutterTts没有dispose方法，只需要停止即可
     } catch (e) {
-      print('TTS dispose error: $e');
+      debugPrint('TTS dispose error: $e');
     }
   }
 }

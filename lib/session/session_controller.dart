@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:math';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:uuid/uuid.dart';
 
@@ -7,6 +8,8 @@ import '../models/models.dart';
 import '../domain/domain.dart';
 import '../data/repositories.dart';
 import 'session_models.dart';
+import 'delayed_replay_manager.dart';
+import 'word_selection_service.dart';
 
 /// 会话控制器
 class SessionController extends StateNotifier<SessionData> {
@@ -14,6 +17,8 @@ class SessionController extends StateNotifier<SessionData> {
   final ProgressRepository _progressRepository;
   final TtsService _ttsService;
   final DistractorService _distractorService;
+  final WordSelectionService _wordSelectionService;
+  final DelayedReplayManager _delayedReplayManager;
 
   Timer? _countdownTimer;
   List<Word>? _candidatePool; // 干扰项候选池
@@ -25,10 +30,18 @@ class SessionController extends StateNotifier<SessionData> {
     required ProgressRepository progressRepository,
     required TtsService ttsService,
     required DistractorService distractorService,
+    required int Function() getDailyNewRemaining,
+    required Future<void> Function(int) consumeDailyNew,
   }) : _wordRepository = wordRepository,
        _progressRepository = progressRepository,
        _ttsService = ttsService,
        _distractorService = distractorService,
+       _wordSelectionService = WordSelectionService(
+         progressRepository: progressRepository,
+         getDailyNewRemaining: getDailyNewRemaining,
+         consumeDailyNew: consumeDailyNew,
+       ),
+       _delayedReplayManager = const DelayedReplayManager(),
        super(
          SessionData.initial(
            initialQueue: [],
@@ -41,6 +54,12 @@ class SessionController extends StateNotifier<SessionData> {
              wrongDelay: 3,
              slowDelay: 5,
              slowThreshold: 1.5,
+             newCardRatio: 0.25,
+             dailyNewLimit: 30,
+             ttsAutoPlay: true,
+             ttsOnWrong: false,
+             leechLapsesThreshold: 2,
+             leechIncludeMarked: true,
            ),
            sessionId: '',
          ),
@@ -54,7 +73,7 @@ class SessionController extends StateNotifier<SessionData> {
     int? currentProgress,
   }) async {
     try {
-      print('=== Starting session with config: $config');
+      debugPrint('=== Starting session with config: $config');
       _isPaused = false;
       _pendingNextQuestion = false;
 
@@ -71,15 +90,15 @@ class SessionController extends StateNotifier<SessionData> {
               hardWordIds.add(a.wordId);
             }
           }
-          print('Found ${recentWordIds.length} recent words; ${hardWordIds.length} marked as hard (keep in rotation)');
+          debugPrint('Found ${recentWordIds.length} recent words; ${hardWordIds.length} marked as hard (keep in rotation)');
         }
       } catch (e) {
-        print('Unable to load recent test run: $e');
+        debugPrint('Unable to load recent test run: $e');
       }
 
       // 准备候选池（用于干扰项生成）
       _candidatePool = await _wordRepository.loadByLevels(config.levels);
-      print('Candidate pool size: ${_candidatePool?.length}');
+      debugPrint('Candidate pool size: ${_candidatePool?.length}');
 
       if (_candidatePool == null || _candidatePool!.isEmpty) {
         throw Exception('No words available for levels: ${config.levels}');
@@ -89,14 +108,16 @@ class SessionController extends StateNotifier<SessionData> {
       String sessionId;
       int progress = 0;
 
-      // 检查是否是恢复会话
-      if (resumeSessionId != null &&
+      final resumeRequested = resumeSessionId != null &&
           remainingWordIds != null &&
-          remainingWordIds.isNotEmpty) {
-        print('=== Resuming existing session ===');
-        print('Session ID: $resumeSessionId');
-        print('Remaining word IDs: ${remainingWordIds.length}');
-        print('Current progress: ${currentProgress ?? 0}');
+          remainingWordIds.isNotEmpty;
+
+      // 检查是否是恢复会话
+      if (resumeRequested) {
+        debugPrint('=== Resuming existing session ===');
+        debugPrint('Session ID: $resumeSessionId');
+        debugPrint('Remaining word IDs: ${remainingWordIds.length}');
+        debugPrint('Current progress: ${currentProgress ?? 0}');
 
         sessionId = resumeSessionId;
         progress = currentProgress ?? 0;
@@ -109,17 +130,34 @@ class SessionController extends StateNotifier<SessionData> {
           }
         }
 
-        print('Restored ${availableWords.length} words from saved session');
+        debugPrint('Restored ${availableWords.length} words from saved session');
+        if (availableWords.isEmpty) {
+          debugPrint('No remaining words matched current levels, starting a new session instead');
+        }
       } else {
-        print('=== Starting new session ===');
+        debugPrint('=== Starting new session ===');
 
         // 生成新会话ID
         const uuid = Uuid();
         sessionId = uuid.v4();
 
         // 基于“到期/错题/新词/填充”策略选词
-        availableWords = await _buildWordListForNewSession(
+        availableWords = await _wordSelectionService.buildWordListForNewSession(
           config: config,
+          candidatePool: _candidatePool!,
+          recentWordIds: recentWordIds,
+          hardWordIds: hardWordIds,
+        );
+      }
+
+      if (resumeRequested && availableWords.isEmpty) {
+        debugPrint('Fallback: building a new session word list');
+        const uuid = Uuid();
+        sessionId = uuid.v4();
+        progress = 0;
+        availableWords = await _wordSelectionService.buildWordListForNewSession(
+          config: config,
+          candidatePool: _candidatePool!,
           recentWordIds: recentWordIds,
           hardWordIds: hardWordIds,
         );
@@ -157,7 +195,7 @@ class SessionController extends StateNotifier<SessionData> {
         }
       }
 
-      print('Using ${availableWords.length} words for test');
+      debugPrint('Using ${availableWords.length} words for test');
 
       if (availableWords.isEmpty) {
         throw Exception('No words available for the selected configuration.');
@@ -187,16 +225,16 @@ class SessionController extends StateNotifier<SessionData> {
           ),
         );
         state = state.copyWith(attempts: dummyAttempts);
-        print('Restored session with ${progress} completed attempts');
+        debugPrint('Restored session with $progress completed attempts');
       }
 
-      print('Session initialized, presenting first question...');
+      debugPrint('Session initialized, presenting first question...');
 
       // 开始第一题
       await _presentNextQuestion();
     } catch (e, stackTrace) {
-      print('Error starting session: $e');
-      print('Stack trace: $stackTrace');
+      debugPrint('Error starting session: $e');
+      debugPrint('Stack trace: $stackTrace');
       rethrow;
     }
   }
@@ -204,7 +242,7 @@ class SessionController extends StateNotifier<SessionData> {
   /// 用户选择选项
   Future<void> selectOption(int optionIndex) async {
     if (state.state != SessionState.waiting || state.currentQuestion == null) {
-      print('selectOption ignored: state=${state.state}, hasQuestion=${state.currentQuestion != null}');
+      debugPrint('selectOption ignored: state=${state.state}, hasQuestion=${state.currentQuestion != null}');
       return; // 无效状态，忽略
     }
 
@@ -221,7 +259,6 @@ class SessionController extends StateNotifier<SessionData> {
       final attempt = _createAttempt(
         optionIndex,
         reactionTime,
-        AttemptResult.correct,
       );
 
       // 进入resolved状态
@@ -242,8 +279,8 @@ class SessionController extends StateNotifier<SessionData> {
       await Future.delayed(delayDuration);
       await _presentNextQuestion();
     } catch (e, stackTrace) {
-      print('Error in selectOption: $e');
-      print('Stack trace: $stackTrace');
+      debugPrint('Error in selectOption: $e');
+      debugPrint('Stack trace: $stackTrace');
       // 尝试恢复
       await _presentNextQuestion();
     }
@@ -252,7 +289,7 @@ class SessionController extends StateNotifier<SessionData> {
   /// 超时处理
   Future<void> _onTimeout() async {
     if (state.state != SessionState.waiting || state.currentQuestion == null) {
-      print('_onTimeout ignored: state=${state.state}, hasQuestion=${state.currentQuestion != null}');
+      debugPrint('_onTimeout ignored: state=${state.state}, hasQuestion=${state.currentQuestion != null}');
       return;
     }
 
@@ -261,7 +298,6 @@ class SessionController extends StateNotifier<SessionData> {
       final attempt = _createAttempt(
         -1,
         state.config.timeLimitMs,
-        AttemptResult.timeout,
       );
 
       // 进入resolved状态
@@ -278,8 +314,8 @@ class SessionController extends StateNotifier<SessionData> {
       await Future.delayed(const Duration(milliseconds: 1000));
       await _presentNextQuestion();
     } catch (e, stackTrace) {
-      print('Error in _onTimeout: $e');
-      print('Stack trace: $stackTrace');
+      debugPrint('Error in _onTimeout: $e');
+      debugPrint('Stack trace: $stackTrace');
       // 尝试恢复
       await _presentNextQuestion();
     }
@@ -303,7 +339,7 @@ class SessionController extends StateNotifier<SessionData> {
 
       // 确保候选池存在
       if (_candidatePool == null || _candidatePool!.isEmpty) {
-        print('Error: Candidate pool is empty or null');
+        debugPrint('Error: Candidate pool is empty or null');
         await _finishSession();
         return;
       }
@@ -330,7 +366,9 @@ class SessionController extends StateNotifier<SessionData> {
       );
 
       // 发音（不阻塞）
-      _speakWord(question.word.headword);
+      if (state.config.ttsAutoPlay) {
+        _speakWord(question.word.headword);
+      }
 
       // 立即进入waiting状态并开始计时，再次确保未选中状态
       state = state.copyWith(
@@ -339,8 +377,8 @@ class SessionController extends StateNotifier<SessionData> {
       );
       _startCountdown();
     } catch (e, stackTrace) {
-      print('Error presenting next question: $e');
-      print('Stack trace: $stackTrace');
+      debugPrint('Error presenting next question: $e');
+      debugPrint('Stack trace: $stackTrace');
       // 尝试恢复或结束会话
       await _finishSession();
     }
@@ -369,7 +407,7 @@ class SessionController extends StateNotifier<SessionData> {
 
       if (word == null) {
         // 如果找不到单词，跳过这个延迟项目
-        print('Warning: Could not find word ${delayedItem.wordId} in candidate pool, skipping');
+        debugPrint('Warning: Could not find word ${delayedItem.wordId} in candidate pool, skipping');
         state = state.copyWith(delayedQueue: state.delayedQueue.skip(1).toList());
         return _getNextWord(); // 递归获取下一个
       }
@@ -460,157 +498,24 @@ class SessionController extends StateNotifier<SessionData> {
   void _processDelayedQueue() {
     if (state.delayedQueue.isEmpty) return;
 
-    // 所有项目的afterN减1
-    final updatedDelayed = state.delayedQueue
-        .map((item) => item.copyWith(afterN: item.afterN - 1))
-        .toList();
-
-    // 找出成熟的项目（afterN <= 0）
-    final maturedItems = updatedDelayed
-        .where((item) => item.afterN <= 0)
-        .toList();
-    final stillDelayed = updatedDelayed
-        .where((item) => item.afterN > 0)
-        .toList();
-
-    if (maturedItems.isNotEmpty) {
-      // 将成熟的项目插入主队列前部（但留出至少2个位置）
-      final insertPosition = min(2, state.mainQueue.length);
-      final newMainQueue = List<Word>.from(state.mainQueue);
-
-      for (final item in maturedItems.reversed) {
-        final word = _candidatePool?.firstWhere(
-          (w) => w.id == item.wordId,
-          orElse: () => throw StateError('Word not found: ${item.wordId}'),
-        );
-        if (word != null) {
-          newMainQueue.insert(insertPosition, word);
-        } else {
-          print('Warning: Could not find word ${item.wordId} for delayed replay, skipping');
-        }
-      }
-
-      state = state.copyWith(
-        mainQueue: newMainQueue,
-        delayedQueue: stillDelayed,
-      );
-    } else {
-      state = state.copyWith(delayedQueue: stillDelayed);
+    final candidatePool = _candidatePool;
+    if (candidatePool == null || candidatePool.isEmpty) {
+      debugPrint('Warning: Candidate pool is empty during delayed queue processing');
+      return;
     }
+
+    final result = _delayedReplayManager.processDelayedQueue(
+      mainQueue: state.mainQueue,
+      delayedQueue: state.delayedQueue,
+      candidatePool: candidatePool,
+    );
+
+    state = state.copyWith(
+      mainQueue: result.mainQueue,
+      delayedQueue: result.delayedQueue,
+    );
   }
 
-  /// 构建新会话的单词列表，遵循记忆曲线优先级：到期 > 难词 > 新词 > 填充
-  Future<List<Word>> _buildWordListForNewSession({
-    required SessionConfig config,
-    required Set<int> recentWordIds,
-    required Set<int> hardWordIds,
-  }) async {
-    final target = config.wordsPerSession;
-    final seen = <int>{};
-    final result = <Word>[];
-
-    // 配额
-    final dueQuota = max(1, (target * 0.5).round());
-    final hardQuota = max(1, (target * 0.25).round());
-    final newQuota = max(1, (target * 0.25).round());
-
-    List<Word> takeWords(List<Word> source, int quota) {
-      final picked = <Word>[];
-      for (final w in source) {
-        if (picked.length >= quota || result.length >= target) break;
-        if (seen.add(w.id)) {
-          picked.add(w);
-          result.add(w);
-        }
-      }
-      return picked;
-    }
-
-    // 1) 到期词
-    final dueWords = await _progressRepository.getDueWords(config.levels);
-    takeWords(dueWords, dueQuota);
-
-    // 2) 难词（最近一轮错/超时/慢）
-    if (result.length < target && hardWordIds.isNotEmpty) {
-      final hardPool = _candidatePool?.where((w) => hardWordIds.contains(w.id)).toList() ?? [];
-      takeWords(hardPool, hardQuota);
-    }
-
-    // 3) 新词
-    if (result.length < target && !config.onlyLeeches) {
-      final need = min(newQuota, target - result.length);
-      if (need > 0) {
-        final newWords = await _progressRepository.getNewWords(config.levels, need * 2);
-        newWords.shuffle(Random());
-        takeWords(newWords, need);
-      }
-    }
-
-    // 4) 填充：优先未到期但未用过的词，再用 recent 里非难词
-    if (result.length < target) {
-      final filler = <Word>[];
-      if (_candidatePool != null) {
-        filler.addAll(_candidatePool!.where((w) =>
-            !seen.contains(w.id) &&
-            !hardWordIds.contains(w.id) &&
-            !recentWordIds.contains(w.id)));
-      }
-      final sortedFiller = await _sortByLastReview(filler);
-      takeWords(sortedFiller, target - result.length);
-    }
-
-    if (result.length < target && _candidatePool != null && recentWordIds.isNotEmpty) {
-      final recentFillers = _candidatePool!
-          .where((w) => recentWordIds.contains(w.id) && !seen.contains(w.id))
-          .toList();
-      final sortedRecent = await _sortByLastReview(recentFillers);
-      takeWords(sortedRecent, target - result.length);
-    }
-
-    // onlyLeeches 模式：如果仍不足，尝试补充不熟词
-    if (config.onlyLeeches && result.length < target) {
-      final leeches = await _progressRepository.getLeechWords(config.levels);
-      takeWords(leeches, target - result.length);
-    }
-
-    // 兜底：如果仍不足且有候选池，随机补满
-    if (result.length < target && _candidatePool != null) {
-      final remaining = _candidatePool!
-          .where((w) => !seen.contains(w.id))
-          .toList();
-      final sortedRemaining = await _sortByLastReview(remaining);
-      takeWords(sortedRemaining, target - result.length);
-    }
-
-    // 排序策略
-    if (config.orderPolicy == 'random') {
-      result.shuffle(Random());
-    } else {
-      result.sort((a, b) => a.level.compareTo(b.level));
-    }
-
-    if (result.length > target) {
-      return result.take(target).toList();
-    }
-
-    return result;
-  }
-
-  /// 按最后复习时间排序（越久未见越靠前），未有记录视为最久
-  Future<List<Word>> _sortByLastReview(List<Word> words) async {
-    if (words.isEmpty) return words;
-    final states = await _progressRepository.getCardStates(words.map((w) => w.id).toList());
-    final stateMap = {for (final s in states) s.wordId: s};
-    final sentinel = DateTime.fromMillisecondsSinceEpoch(0);
-    words.sort((a, b) {
-      final sa = stateMap[a.id];
-      final sb = stateMap[b.id];
-      final da = sa?.lastReview ?? sentinel;
-      final db = sb?.lastReview ?? sentinel;
-      return da.compareTo(db);
-    });
-    return words;
-  }
 
   /// 处理答题结果
   Future<void> _handleAttemptResult(Attempt attempt) async {
@@ -627,6 +532,23 @@ class SessionController extends StateNotifier<SessionData> {
       _scheduleDelayedReplay(attempt);
     }
 
+    if (state.config.ttsOnWrong && !attempt.isCorrect) {
+      final word = _candidatePool?.firstWhere(
+        (w) => w.id == attempt.wordId,
+        orElse: () => Word(
+          id: attempt.wordId,
+          headword: '',
+          lemma: '',
+          level: '',
+          pos: '',
+          cnDefs: const [''],
+        ),
+      );
+      if (word != null && word.headword.isNotEmpty) {
+        _speakWord(word.headword);
+      }
+    }
+
     // 更新最近出现的单词ID（用于冷却）
     final newRecentIds = Set<int>.from(state.recentWordIds)
       ..add(attempt.wordId);
@@ -639,64 +561,24 @@ class SessionController extends StateNotifier<SessionData> {
 
   /// 判断是否需要延迟回放
   bool _shouldDelayWord(Attempt attempt) {
-    if (attempt.isWrong || attempt.isTimeout) {
-      return true; // 错题或超时
-    }
-
-    if (attempt.isCorrect) {
-      // 检查是否为勉强正确
-      final slowThreshold =
-          state.config.timeLimitMs * state.config.slowThreshold;
-      return attempt.rtMs > slowThreshold;
-    }
-
-    return false;
+    return _delayedReplayManager.shouldDelayWord(attempt, state.config);
   }
 
   /// 安排延迟回放
   void _scheduleDelayedReplay(Attempt attempt) {
-    final existingIndex = state.delayedQueue.indexWhere(
-      (item) => item.wordId == attempt.wordId,
+    final updatedDelayed = _delayedReplayManager.scheduleDelayedReplay(
+      delayedQueue: state.delayedQueue,
+      attempt: attempt,
+      config: state.config,
     );
 
-    int delay;
-    if (attempt.isWrong || attempt.isTimeout) {
-      delay = state.config.wrongDelay;
-    } else {
-      delay = state.config.slowDelay; // 勉强正确
-    }
-
-    // 自适应调整
-    if (existingIndex >= 0) {
-      // 已存在，根据情况调整延迟
-      final existingItem = state.delayedQueue[existingIndex];
-
-      if (attempt.isWrong || attempt.isTimeout) {
-        // 二次仍错，减少延迟
-        delay = max(2, existingItem.afterN ~/ 2);
-      } else {
-        // 二次正确，增加延迟
-        delay = existingItem.afterN + 3;
-      }
-
-      // 更新现有项目
-      final updatedDelayed = List<DelayedItem>.from(state.delayedQueue);
-      updatedDelayed[existingIndex] = existingItem.copyWith(afterN: delay);
-      state = state.copyWith(delayedQueue: updatedDelayed);
-    } else {
-      // 新增延迟项目
-      final newDelayedItem = DelayedItem(wordId: attempt.wordId, afterN: delay);
-      state = state.copyWith(
-        delayedQueue: [...state.delayedQueue, newDelayedItem],
-      );
-    }
+    state = state.copyWith(delayedQueue: updatedDelayed);
   }
 
   /// 创建答题记录
   Attempt _createAttempt(
     int chosenIndex,
     int reactionTime,
-    AttemptResult result,
   ) {
     final question = state.currentQuestion!;
 
@@ -743,7 +625,7 @@ class SessionController extends StateNotifier<SessionData> {
   void _speakWord(String word) {
     // 异步发音，不阻塞UI
     _ttsService.speak(word).catchError((error) {
-      print('TTS error: $error');
+      debugPrint('TTS error: $error');
       // 发音失败不影响功能
     });
   }
@@ -760,7 +642,7 @@ class SessionController extends StateNotifier<SessionData> {
     );
 
     if (state.attempts.isEmpty) {
-      print('No attempts recorded, finishing session without saving run data');
+      debugPrint('No attempts recorded, finishing session without saving run data');
       return;
     }
 
@@ -785,7 +667,7 @@ class SessionController extends StateNotifier<SessionData> {
       await _progressRepository.batchSaveAttempts(state.attempts);
       await _updateSrsStates();
     } catch (e) {
-      print('Error saving session data: $e');
+      debugPrint('Error saving session data: $e');
     }
   }
 
@@ -816,27 +698,27 @@ class SessionController extends StateNotifier<SessionData> {
 
       await _progressRepository.batchUpdateCardStates(updatedStates);
     } catch (e) {
-      print('Error updating SRS states: $e');
+      debugPrint('Error updating SRS states: $e');
     }
   }
 
   /// 暂停会话
   void pauseSession() {
-    print('Pausing session - current state: ${state.state}');
+    debugPrint('Pausing session - current state: ${state.state}');
     _isPaused = true;
     _pendingNextQuestion = false;
     // 无论什么状态都停止计时器
     _stopCountdown();
     // 停止TTS播放
     _ttsService.stop().catchError((error) {
-      print('Error stopping TTS during pause: $error');
+      debugPrint('Error stopping TTS during pause: $error');
     });
     state = state.copyWith(isPaused: true);
   }
 
   /// 恢复会话
   void resumeSession() {
-    print('Resuming session - current state: ${state.state}');
+    debugPrint('Resuming session - current state: ${state.state}');
     _isPaused = false;
     state = state.copyWith(isPaused: false);
 
@@ -855,14 +737,14 @@ class SessionController extends StateNotifier<SessionData> {
   /// 停止会话
   /// 停止会话
   void stopSession() {
-    print('Stopping session - current state: ${state.state}');
+    debugPrint('Stopping session - current state: ${state.state}');
     _isPaused = false;
     _pendingNextQuestion = false;
     _stopCountdown();
 
     // 停止TTS播放
     _ttsService.stop().catchError((error) {
-      print('Error stopping TTS during session stop: $error');
+      debugPrint('Error stopping TTS during session stop: $error');
     });
 
     state = state.copyWith(
@@ -870,7 +752,7 @@ class SessionController extends StateNotifier<SessionData> {
       currentQuestion: null,
       isPaused: false,
     );
-    print('Session stopped');
+    debugPrint('Session stopped');
   }
 
   /// 跳过当前题目
@@ -891,7 +773,7 @@ class SessionController extends StateNotifier<SessionData> {
         final markedState = currentState.markDifficult();
         await _progressRepository.saveCardState(markedState);
       } catch (e) {
-        print('Error marking word as difficult: $e');
+        debugPrint('Error marking word as difficult: $e');
       }
     }
   }
