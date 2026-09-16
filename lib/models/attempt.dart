@@ -14,6 +14,25 @@ enum AttemptResult {
   timeout,
 }
 
+/// 答题发生在什么练习上下文中。
+///
+/// 会话内重测不能被当作独立的长期复习，否则同一轮重复答对会虚增
+/// 长期掌握度。
+@HiveType(typeId: 5)
+enum AttemptKind {
+  @HiveField(0)
+  initial,
+  @HiveField(1)
+  inSessionRetry,
+  @HiveField(2)
+  scheduledReview,
+  @HiveField(3)
+  targetedPractice,
+}
+
+/// 答题质量与三元正误结果正交；例如慢答仍然是 correct。
+enum ResponseQuality { fast, ordinary, slow, assisted, failed }
+
 /// 答题记录模型类
 @HiveType(typeId: 1)
 @JsonSerializable()
@@ -36,6 +55,14 @@ class Attempt {
   @HiveField(5)
   final DateTime timestamp;
 
+  /// 首次呈现、会话内重测或定向练习的来源。
+  @HiveField(6)
+  final AttemptKind kind;
+
+  /// 看义拼词使用的最高提示等级；0 表示没有提示。
+  @HiveField(7)
+  final int highestHintLevel;
+
   const Attempt({
     required this.wordId,
     required this.result,
@@ -43,9 +70,12 @@ class Attempt {
     required this.chosenIndex,
     required this.correctIndex,
     required this.timestamp,
+    this.kind = AttemptKind.initial,
+    this.highestHintLevel = 0,
   });
 
-  factory Attempt.fromJson(Map<String, dynamic> json) => _$AttemptFromJson(json);
+  factory Attempt.fromJson(Map<String, dynamic> json) =>
+      _$AttemptFromJson(json);
   Map<String, dynamic> toJson() => _$AttemptToJson(this);
 
   /// 是否正确
@@ -63,15 +93,18 @@ class Attempt {
     required int rtMs,
     required int chosenIndex,
     required int correctIndex,
-  }) =>
-      Attempt(
-        wordId: wordId,
-        result: AttemptResult.correct,
-        rtMs: rtMs,
-        chosenIndex: chosenIndex,
-        correctIndex: correctIndex,
-        timestamp: DateTime.now(),
-      );
+    AttemptKind kind = AttemptKind.initial,
+    int highestHintLevel = 0,
+  }) => Attempt(
+    wordId: wordId,
+    result: AttemptResult.correct,
+    rtMs: rtMs,
+    chosenIndex: chosenIndex,
+    correctIndex: correctIndex,
+    timestamp: DateTime.now(),
+    kind: kind,
+    highestHintLevel: highestHintLevel,
+  );
 
   /// 创建错误答题记录
   static Attempt wrong({
@@ -79,20 +112,25 @@ class Attempt {
     required int rtMs,
     required int chosenIndex,
     required int correctIndex,
-  }) =>
-      Attempt(
-        wordId: wordId,
-        result: AttemptResult.wrong,
-        rtMs: rtMs,
-        chosenIndex: chosenIndex,
-        correctIndex: correctIndex,
-        timestamp: DateTime.now(),
-      );
+    AttemptKind kind = AttemptKind.initial,
+    int highestHintLevel = 0,
+  }) => Attempt(
+    wordId: wordId,
+    result: AttemptResult.wrong,
+    rtMs: rtMs,
+    chosenIndex: chosenIndex,
+    correctIndex: correctIndex,
+    timestamp: DateTime.now(),
+    kind: kind,
+    highestHintLevel: highestHintLevel,
+  );
 
   /// 创建超时答题记录
   static Attempt timeout({
     required int wordId,
     required int correctIndex,
+    AttemptKind kind = AttemptKind.initial,
+    int highestHintLevel = 0,
   }) =>
       Attempt(
         wordId: wordId,
@@ -101,8 +139,35 @@ class Attempt {
         chosenIndex: -1,
         correctIndex: correctIndex,
         timestamp: DateTime.now(),
+        kind: kind,
+        highestHintLevel: highestHintLevel,
       );
 
+  bool get usedHint => highestHintLevel > 0;
+
+  bool get isInSessionRetry => kind == AttemptKind.inSessionRetry;
+
+  Attempt copyWith({
+    int? wordId,
+    AttemptResult? result,
+    int? rtMs,
+    int? chosenIndex,
+    int? correctIndex,
+    DateTime? timestamp,
+    AttemptKind? kind,
+    int? highestHintLevel,
+  }) => Attempt(
+    wordId: wordId ?? this.wordId,
+    result: result ?? this.result,
+    rtMs: rtMs ?? this.rtMs,
+    chosenIndex: chosenIndex ?? this.chosenIndex,
+    correctIndex: correctIndex ?? this.correctIndex,
+    timestamp: timestamp ?? this.timestamp,
+    kind: kind ?? this.kind,
+    highestHintLevel: highestHintLevel ?? this.highestHintLevel,
+  );
+
   @override
-  String toString() => 'Attempt(wordId: $wordId, result: $result, rtMs: $rtMs)';
+  String toString() =>
+      'Attempt(wordId: $wordId, result: $result, kind: $kind, rtMs: $rtMs)';
 }

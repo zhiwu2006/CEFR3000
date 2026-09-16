@@ -38,7 +38,7 @@ class LevelProgressChart extends StatelessWidget {
     final safeTotal = total > 0 ? total : 1;
 
     // Percentages
-    final masteredPercent = (mastered / safeTotal * 100).toInt();
+    final masteredPercent = mastered / safeTotal * 100;
 
     return Row(
       mainAxisAlignment: MainAxisAlignment.center,
@@ -66,7 +66,7 @@ class LevelProgressChart extends StatelessWidget {
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   Text(
-                    '$masteredPercent%',
+                    '${masteredPercent.toStringAsFixed(1)}%',
                     style: TextStyle(
                       fontSize: 32,
                       fontWeight: FontWeight.bold,

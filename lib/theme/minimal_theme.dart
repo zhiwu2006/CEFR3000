@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 /// 极简主题 - 纯净留白风格
-/// 
+///
 /// 设计理念：
 /// - 大量留白，呼吸感
 /// - 极细线条，轻盈感
@@ -29,7 +29,7 @@ class MinimalTheme {
       useMaterial3: true,
       brightness: Brightness.light,
       scaffoldBackgroundColor: background,
-      
+
       colorScheme: const ColorScheme.light(
         primary: accent,
         secondary: primary,
@@ -62,7 +62,7 @@ class MinimalTheme {
         elevation: 0,
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(16),
-        side: BorderSide(color: border.withValues(alpha: 0.5), width: 1),
+          side: BorderSide(color: border.withValues(alpha: 0.5), width: 1),
         ),
         margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       ),
@@ -116,7 +116,10 @@ class MinimalTheme {
         ),
         filled: true,
         fillColor: surface,
-        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        contentPadding: const EdgeInsets.symmetric(
+          horizontal: 16,
+          vertical: 14,
+        ),
       ),
 
       // 进度指示器
@@ -162,9 +165,9 @@ class MinimalTheme {
           return Colors.white;
         }),
         trackColor: WidgetStateProperty.resolveWith((states) {
-    if (states.contains(WidgetState.selected)) {
-      return accent.withValues(alpha: 0.5);
-    }
+          if (states.contains(WidgetState.selected)) {
+            return accent.withValues(alpha: 0.5);
+          }
           return border;
         }),
       ),
@@ -196,9 +199,7 @@ class MinimalTheme {
       // Dialog
       dialogTheme: DialogThemeData(
         backgroundColor: surface,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(20),
-        ),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
         titleTextStyle: const TextStyle(
           fontSize: 20,
           fontWeight: FontWeight.w600,
@@ -307,7 +308,7 @@ class MinimalTheme {
   }
 
   // ============ 辅助方法 ============
-  
+
   static Color getLevelBadgeColor(String level) {
     switch (level) {
       case 'A1':

@@ -18,11 +18,11 @@ class HiveWordRepository implements WordRepository {
       if (!Hive.isAdapterRegistered(0)) {
         Hive.registerAdapter(WordAdapter());
       }
-      
+
       debugPrint('Opening words box...');
       _box = await Hive.openBox<Word>(_boxName);
       debugPrint('Words box opened, contains ${_box.length} words');
-      
+
       // 如果box为空，则从assets加载
       if (_box.isEmpty) {
         debugPrint('Words box is empty, loading from assets...');
@@ -41,13 +41,13 @@ class HiveWordRepository implements WordRepository {
   @override
   Future<void> forceReload() async {
     debugPrint('Force reloading words from assets...');
-    
+
     // 清除旧数据
     await _box.clear();
-    
+
     // 清除缓存
     _clearCache();
-    
+
     // 重新从assets加载
     await _loadFromAssets();
   }
@@ -55,15 +55,17 @@ class HiveWordRepository implements WordRepository {
   /// 从assets加载词汇数据
   Future<void> _loadFromAssets() async {
     try {
-      final String jsonString = await rootBundle.loadString('assets/words.json');
+      final String jsonString = await rootBundle.loadString(
+        'assets/words.json',
+      );
       final List<dynamic> jsonList = json.decode(jsonString);
-      
+
       final words = jsonList.map((json) => Word.fromJson(json)).toList();
-      
+
       // 批量保存到Hive
       final Map<int, Word> wordMap = {for (var word in words) word.id: word};
       await _box.putAll(wordMap);
-      
+
       debugPrint('Loaded ${words.length} words from assets');
     } catch (e) {
       debugPrint('Error loading words from assets: $e');
@@ -120,12 +122,18 @@ class HiveWordRepository implements WordRepository {
   }
 
   @override
-  Future<List<Word>> getSameLevelSamePos(String level, String pos, {int? excludeId}) async {
+  Future<List<Word>> getSameLevelSamePos(
+    String level,
+    String pos, {
+    int? excludeId,
+  }) async {
     return _words
-        .where((word) => 
-            word.level == level && 
-            word.majorPos == pos && 
-            (excludeId == null || word.id != excludeId))
+        .where(
+          (word) =>
+              word.level == level &&
+              word.majorPos == pos &&
+              (excludeId == null || word.id != excludeId),
+        )
         .toList();
   }
 
@@ -133,25 +141,27 @@ class HiveWordRepository implements WordRepository {
   Future<List<Word>> search(String query) async {
     final lowerQuery = query.toLowerCase();
     return _words
-        .where((word) => 
-            word.headword.toLowerCase().contains(lowerQuery) ||
-            word.lemma.toLowerCase().contains(lowerQuery) ||
-            word.cnDefs.any((def) => def.contains(query)))
+        .where(
+          (word) =>
+              word.headword.toLowerCase().contains(lowerQuery) ||
+              word.lemma.toLowerCase().contains(lowerQuery) ||
+              word.cnDefs.any((def) => def.contains(query)),
+        )
         .toList();
   }
 
   @override
   Future<Map<String, int>> getStatistics() async {
     final stats = <String, int>{};
-    
+
     // 按级别统计
     for (final word in _words) {
       stats['level_${word.level}'] = (stats['level_${word.level}'] ?? 0) + 1;
       stats['pos_${word.majorPos}'] = (stats['pos_${word.majorPos}'] ?? 0) + 1;
     }
-    
+
     stats['total'] = _words.length;
-    
+
     return stats;
   }
 

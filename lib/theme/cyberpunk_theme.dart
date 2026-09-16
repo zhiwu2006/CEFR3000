@@ -3,7 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 /// 赛博朋克主题 - 霓虹故障风格
-/// 
+///
 /// 设计理念：
 /// - "High-Tech, Low-Life" 数字废土美学
 /// - 深邃黑暗背景 + 霓虹发光效果
@@ -14,26 +14,35 @@ class CyberpunkTheme {
   // ============ 核心色彩 ============
   /// 深渊黑（带微蓝底色）
   static const Color background = Color(0xFF0A0A0F);
+
   /// 前景文字（非纯白，减少刺眼）
   static const Color foreground = Color(0xFFE0E0E0);
+
   /// 卡片背景（深紫黑）
   static const Color card = Color(0xFF12121A);
+
   /// UI 镀铬/高亮背景
   static const Color muted = Color(0xFF1C1C2E);
+
   /// 次要文字
   static const Color mutedForeground = Color(0xFF6B7280);
+
   /// 边框
   static const Color border = Color(0xFF2A2A3A);
+
   /// 表面色
   static const Color surface = Color(0xFF12121A);
 
   // ============ 霓虹色彩 ============
   /// 主霓虹 - 电子绿（Matrix 风格）
   static const Color neonGreen = Color(0xFF00FF88);
+
   /// 次霓虹 - 热粉/品红
   static const Color neonMagenta = Color(0xFFFF00FF);
+
   /// 第三霓虹 - 电光蓝/青色
   static const Color neonCyan = Color(0xFF00D4FF);
+
   /// 警告霓虹 - 琥珀黄
   static const Color neonYellow = Color(0xFFFFD54F);
 
@@ -128,7 +137,7 @@ class CyberpunkTheme {
       useMaterial3: true,
       brightness: Brightness.dark,
       scaffoldBackgroundColor: background,
-      
+
       colorScheme: ColorScheme.dark(
         primary: neonGreen,
         secondary: neonMagenta,
@@ -176,9 +185,7 @@ class CyberpunkTheme {
           foregroundColor: background,
           elevation: 0,
           padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(2),
-          ),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(2)),
           textStyle: GoogleFonts.shareTechMono(
             fontSize: 14,
             fontWeight: FontWeight.w700,
@@ -193,9 +200,7 @@ class CyberpunkTheme {
           backgroundColor: Colors.transparent,
           padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
           side: BorderSide(color: neonGreen, width: 2),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(2),
-          ),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(2)),
           textStyle: GoogleFonts.shareTechMono(
             fontSize: 14,
             fontWeight: FontWeight.w700,
@@ -234,11 +239,11 @@ class CyberpunkTheme {
         ),
         filled: true,
         fillColor: card,
-        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-        prefixStyle: GoogleFonts.jetBrainsMono(
-          color: neonGreen,
-          fontSize: 14,
+        contentPadding: const EdgeInsets.symmetric(
+          horizontal: 16,
+          vertical: 14,
         ),
+        prefixStyle: GoogleFonts.jetBrainsMono(color: neonGreen, fontSize: 14),
         hintStyle: GoogleFonts.jetBrainsMono(
           color: mutedForeground,
           fontSize: 14,
@@ -253,11 +258,7 @@ class CyberpunkTheme {
       ),
 
       // 分割线
-      dividerTheme: DividerThemeData(
-        color: border,
-        thickness: 1,
-        space: 1,
-      ),
+      dividerTheme: DividerThemeData(color: border, thickness: 1, space: 1),
 
       // Chip - 霓虹边框
       chipTheme: ChipThemeData(
@@ -290,7 +291,9 @@ class CyberpunkTheme {
           return mutedForeground;
         }),
         trackColor: WidgetStateProperty.resolveWith((states) {
-          if (states.contains(WidgetState.selected)) return neonGreen.withValues(alpha: 0.4);
+          if (states.contains(WidgetState.selected)) {
+            return neonGreen.withValues(alpha: 0.4);
+          }
           return border;
         }),
         trackOutlineColor: WidgetStateProperty.resolveWith((states) {
@@ -383,10 +386,7 @@ class CyberpunkTheme {
       ),
 
       // Icon
-      iconTheme: IconThemeData(
-        color: foreground,
-        size: 24,
-      ),
+      iconTheme: IconThemeData(color: foreground, size: 24),
 
       // TabBar
       tabBarTheme: TabBarThemeData(
@@ -507,7 +507,7 @@ class CyberpunkTheme {
   }
 
   // ============ 辅助方法 ============
-  
+
   /// 获取霓虹边框装饰
   static BoxDecoration getNeonBorderDecoration({
     Color? glowColor,
@@ -568,18 +568,9 @@ class CyberpunkTheme {
   static List<Shadow> getNeonTextShadow({Color? color}) {
     final glowColor = color ?? neonGreen;
     return [
-      Shadow(
-        color: glowColor.withValues(alpha: 0.8),
-        blurRadius: 4,
-      ),
-      Shadow(
-        color: glowColor.withValues(alpha: 0.5),
-        blurRadius: 8,
-      ),
-      Shadow(
-        color: glowColor.withValues(alpha: 0.3),
-        blurRadius: 16,
-      ),
+      Shadow(color: glowColor.withValues(alpha: 0.8), blurRadius: 4),
+      Shadow(color: glowColor.withValues(alpha: 0.5), blurRadius: 8),
+      Shadow(color: glowColor.withValues(alpha: 0.3), blurRadius: 16),
     ];
   }
 
@@ -606,8 +597,8 @@ class CyberpunkTheme {
         begin: Alignment.topCenter,
         end: Alignment.bottomCenter,
         colors: List.generate(100, (index) {
-          return index.isEven 
-              ? Colors.transparent 
+          return index.isEven
+              ? Colors.transparent
               : Colors.black.withValues(alpha: 0.05);
         }),
         stops: List.generate(100, (index) => index / 100),

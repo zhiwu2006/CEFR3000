@@ -1,59 +1,68 @@
 import 'dart:math';
 import '../models/models.dart';
 
-/// SRS算法实现
+/// SRS 算法配置（值对象，不可变）
+class SrsConfig {
+  final double alphaStability; // 稳定度调整系数
+  final double betaFailure; // 失败时稳定度下限
+  final double gammaInterval; // 间隔计算系数
+  final int maxIntervalDays; // 最大间隔天数
+
+  const SrsConfig({
+    this.alphaStability = 0.18,
+    this.betaFailure = 1.2,
+    this.gammaInterval = 1.0,
+    this.maxIntervalDays = 90,
+  });
+
+  /// 从 SrsSettings 构造
+  factory SrsConfig.fromSettings(SrsSettings s) => SrsConfig(
+    alphaStability: s.alphaStability.clamp(0.05, 1.0),
+    betaFailure: s.betaFailure.clamp(0.5, 5.0),
+    gammaInterval: s.gammaInterval.clamp(0.2, 5.0),
+    maxIntervalDays: s.maxIntervalDays.clamp(1, 365),
+  );
+
+  static const defaultConfig = SrsConfig();
+}
+
+/// Leech 判定策略（值对象，不可变）
+class LeechPolicy {
+  final int lapsesThreshold;
+  final bool includeMarked;
+
+  const LeechPolicy({this.lapsesThreshold = 2, this.includeMarked = true});
+
+  static const defaultPolicy = LeechPolicy();
+
+  /// 判断一个卡片是否为 Leech
+  bool isLeech(CardState state) =>
+      state.lapses >= lapsesThreshold ||
+      (includeMarked && state.isMarkedDifficult);
+}
+
+/// SRS 算法实现（纯函数，无任何可变状态）
 class SrsAlgorithm {
-  // SRS参数
-  static double _alphaStability = 0.18; // 稳定度调整系数（提升成长幅度）
-  static double _betaFailure = 1.2; // 失败时稳定度重置
-  static double _gammaInterval = 1.0; // 间隔计算系数
-  static int _maxIntervalDays = 90; // 最大间隔天数
+  const SrsAlgorithm._();
 
-  static double _clampDouble(double value, double min, double max) {
-    if (value < min) return min;
-    if (value > max) return max;
-    return value;
-  }
-
-  static int _clampInt(int value, int min, int max) {
-    if (value < min) return min;
-    if (value > max) return max;
-    return value;
-  }
-
-  static void updateConfig({
-    double? alphaStability,
-    double? betaFailure,
-    double? gammaInterval,
-    int? maxIntervalDays,
-  }) {
-    if (alphaStability != null) {
-      _alphaStability = _clampDouble(alphaStability, 0.05, 1.0);
-    }
-    if (betaFailure != null) {
-      _betaFailure = _clampDouble(betaFailure, 0.5, 5.0);
-    }
-    if (gammaInterval != null) {
-      _gammaInterval = _clampDouble(gammaInterval, 0.2, 5.0);
-    }
-    if (maxIntervalDays != null) {
-      _maxIntervalDays = _clampInt(maxIntervalDays, 1, 365);
-    }
-  }
+  // ============================================================
+  // 质量评分
+  // ============================================================
 
   /// 计算质量分数
-  /// 
+  ///
   /// [result] 答题结果
   /// [reactionTime] 反应时间（毫秒）
   /// [timeLimit] 时间限制（毫秒）
   /// [baselineRtMs] 用户/卡片的中位反应时间（可选，用于自适应阈值）
-  /// 
+  ///
   /// 返回质量分 q ∈ {1, 3, 4, 5}
   static int calculateQuality({
     required AttemptResult result,
     required int reactionTime,
     required int timeLimit,
     int? baselineRtMs,
+    double slowThresholdMultiplier = 1.5,
   }) {
     switch (result) {
       case AttemptResult.wrong:
@@ -61,11 +70,26 @@ class SrsAlgorithm {
         return 1; // 错误或超时
 
       case AttemptResult.correct:
-        final baseline = (baselineRtMs != null && baselineRtMs > 0)
+        final safeTimeLimit = max(1, timeLimit);
+        // 没有历史速度时，以时限的 60% 作为保守的初始基线。
+        // 慢答阈值始终被限制在答题时限内，避免“慢答”在逻辑上永远不可能发生。
+        final hasBaseline = baselineRtMs != null && baselineRtMs > 0;
+        final baseline = hasBaseline
             ? baselineRtMs.toDouble()
-            : timeLimit.toDouble();
-        final fastThreshold = min(timeLimit * 0.5, baseline * 0.8);
-        final slowThreshold = max(timeLimit * 0.8, baseline * 1.2);
+            : safeTimeLimit * 0.6;
+        final fastThreshold = hasBaseline
+            ? min(safeTimeLimit * 0.5, baseline * 0.8)
+            : safeTimeLimit * 0.5;
+        final normalizedSensitivity =
+            (slowThresholdMultiplier.clamp(1.0, 2.5) - 1.0) / 1.5;
+        // 旧设置保存的是 1.0~2.5x。将它映射为有限的敏感度，保证阈值
+        // 仍在时限内，同时避免历史基准稍慢时“慢答”永远不可达。
+        final effectiveMultiplier = 0.8 + normalizedSensitivity * 0.6;
+        final configuredSlow = baseline * effectiveMultiplier;
+        final slowThreshold = min(
+          safeTimeLimit * 0.95,
+          max(safeTimeLimit * 0.8, configuredSlow),
+        );
 
         if (reactionTime <= fastThreshold) {
           return 5; // 快对
@@ -76,157 +100,162 @@ class SrsAlgorithm {
     }
   }
 
+  /// 将数值质量映射为展示和统计使用的质量标签。
+  ///
+  /// deadline 仍由会话倒计时负责；这里的 slow 只会出现在截止前已提交、
+  /// 且高于慢答阈值的正确答案中。
+  static ResponseQuality classifyResponseQuality({
+    required AttemptResult result,
+    required int reactionTime,
+    required int timeLimit,
+    int? baselineRtMs,
+    double slowThresholdMultiplier = 1.5,
+    int highestHintLevel = 0,
+  }) {
+    if (result != AttemptResult.correct) return ResponseQuality.failed;
+    if (highestHintLevel > 0) return ResponseQuality.assisted;
+    final quality = calculateQuality(
+      result: result,
+      reactionTime: reactionTime,
+      timeLimit: timeLimit,
+      baselineRtMs: baselineRtMs,
+      slowThresholdMultiplier: slowThresholdMultiplier,
+    );
+    return switch (quality) {
+      5 => ResponseQuality.fast,
+      3 => ResponseQuality.slow,
+      _ => ResponseQuality.ordinary,
+    };
+  }
+
+  // ============================================================
+  // 卡片状态更新
+  // ============================================================
+
   /// 更新卡片状态
-  /// 
-  /// [currentState] 当前卡片状态
-  /// [quality] 质量分数
-  /// [recallProb] 回忆概率估计（可选）
-  /// 
-  /// 返回更新后的卡片状态
   static CardState updateCardState(
     CardState currentState,
     int quality, {
     double? recallProb,
+    DateTime? reviewedAt,
+    bool shortTermReview = false,
+    bool countFailureAsLongTerm = true,
+    SrsConfig config = const SrsConfig(),
   }) {
     final newDifficulty = _updateDifficulty(currentState.difficulty, quality);
-    final newStability = _updateStability(currentState.stability, quality);
-    final adjustedStability = _adjustStabilityByRecall(newStability, quality, recallProb);
-    final intervalDays = _calculateInterval(adjustedStability, newDifficulty);
-    // 加1小时缓冲，避免因毫秒级差导致 inDays 取整为0
-    final newDue = DateTime.now().add(Duration(days: intervalDays, hours: 1));
-    
+    final newStability = _updateStability(
+      currentState.stability,
+      quality,
+      config,
+      shortTermReview: shortTermReview,
+    );
+    final adjustedStability = _adjustStabilityByRecall(
+      newStability,
+      quality,
+      recallProb,
+    );
+    final intervalDays = _calculateInterval(
+      adjustedStability,
+      newDifficulty,
+      config,
+    );
+    // 到期时间从实际复习时刻开始计算，不额外人为延后一天的复习。
+    final reviewTime = reviewedAt ?? DateTime.now();
+    final calculatedDue = reviewTime.add(Duration(days: intervalDays));
+    // 提前的同日复测只强化短时记忆，不应把原本更晚的长期复习日期不断
+    // 推后；已经到期的卡片仍按本次复习重新安排。
+    final newDue = shortTermReview && currentState.due.isAfter(calculatedDue)
+        ? currentState.due
+        : calculatedDue;
+
     return currentState.updateSRS(
       newStability: adjustedStability,
       newDifficulty: newDifficulty,
       newDue: newDue,
-      newRtP50: currentState.rtP50, // 暂时不更新，可在会话结束时批量更新
-      increaselapses: quality <= 2,
+      newRtP50: currentState.rtP50,
+      reviewedAt: reviewTime,
+      countsAsLongTermReview: !shortTermReview && quality >= 3,
+      increaselapses: quality <= 2 && countFailureAsLongTerm,
     );
   }
 
-  /// 更新难度
-  /// 
-  /// 更直观的调整规则：
-  /// - 低质量（<=2）：增加难度
-  /// - 中等质量（3,4）：微调
-  /// - 高质量（5）：降低难度
+  // ============================================================
+  // 内部算法（P1 改进已内联）
+  // ============================================================
+
+  /// 更新难度 — 使用均值回归（P2 修复）
+  ///
+  /// 目标难度由 quality 决定，实际难度朝目标方向渐进移动。
+  /// 这避免了"一次答错就大幅跳变"的问题。
   static double _updateDifficulty(double currentDifficulty, int quality) {
-    double adjustment;
-    if (quality <= 2) {
-      adjustment = 0.3;
-    } else if (quality == 3) {
-      adjustment = 0.05;
-    } else if (quality == 4) {
-      adjustment = -0.05;
-    } else {
-      adjustment = -0.3;
-    }
-    return (currentDifficulty + adjustment).clamp(1.2, 3.0);
+    // 目标难度：quality 越高，目标越低
+    final targetD = max(1.2, 3.0 - (quality - 1) * 0.4);
+    // 朝目标方向移动（步长 10%，避免震荡）
+    final newD = currentDifficulty + 0.1 * (targetD - currentDifficulty);
+    return newD.clamp(1.2, 3.0);
   }
 
-  /// 更新稳定度
-  /// 
-  /// 如果 q >= 3: S' = S * (1 + α * (quality-2))，quality 越高增幅越大
-  /// 如果 q <= 2: S' = β
-  static double _updateStability(double currentStability, int quality) {
+  /// 更新稳定度（P1 修复：引入对数衰减因子）
+  ///
+  /// 正确时：S' = S * (1 + α * (q-2) * dampingFactor)
+  ///   dampingFactor 随稳定度增大而减小，防止高稳定度卡片增长过快
+  /// 失败时：保留部分记忆痕迹，高稳定度卡片保留更多（渐进式惩罚）
+  static double _updateStability(
+    double currentStability,
+    int quality,
+    SrsConfig config, {
+    bool shortTermReview = false,
+  }) {
     if (quality >= 3) {
-      // 正确答题，质量越高提升越多
-      final multiplier = 1 + _alphaStability * (quality - 2);
+      // 对数衰减因子：稳定度越高，增长越慢
+      final growthDamping =
+          1.0 / (1.0 + log(max(1.0, currentStability)) * 0.15);
+      final growth = config.alphaStability * (quality - 2) * growthDamping;
+      // 同日/短间隔重测主要反映短时记忆，只给予长期增长的一小部分。
+      final multiplier =
+          1 + (shortTermReview ? min(0.065, growth * 0.12) : growth);
       return currentStability * multiplier;
     } else {
-      // 错误答题，惩罚性降低稳定度，但保留 25% 的记忆痕迹，避免断崖式归零
-      // 最小不低于 betaFailure (1.2)
-      return max(_betaFailure, currentStability * 0.25);
+      // 渐进式惩罚：高稳定度卡片保留更多"记忆痕迹"
+      // 0.20 ~ 0.30，根据稳定度线性插值
+      final retainRatio = 0.20 + 0.10 * min(1.0, currentStability / 30.0);
+      return max(config.betaFailure, currentStability * retainRatio);
     }
   }
 
   /// 计算复习间隔（天数）
-  /// 
-  /// I = γ * S' / D'，限制在 [1, maxIntervalDays] 天
-  static int _calculateInterval(double stability, double difficulty) {
-    final rawInterval = _gammaInterval * stability / difficulty;
-    return rawInterval.round().clamp(1, _maxIntervalDays);
-  }
-
-  /// 批量更新卡片状态
-  /// 
-  /// [states] 当前状态映射 wordId -> CardState
-  /// [attempts] 答题记录列表
-  /// [timeLimit] 时间限制
-  /// 
-  /// 返回更新后的状态映射
-  static Map<int, CardState> batchUpdateCardStates(
-    Map<int, CardState> states,
-    List<Attempt> attempts,
-    int timeLimit,
+  static int _calculateInterval(
+    double stability,
+    double difficulty,
+    SrsConfig config,
   ) {
-    final updatedStates = <int, CardState>{};
-    
-    // 按单词ID分组答题记录
-    final attemptsByWord = <int, List<Attempt>>{};
-    for (final attempt in attempts) {
-      attemptsByWord.putIfAbsent(attempt.wordId, () => []).add(attempt);
-    }
-    
-    // 为每个单词更新状态
-    for (final entry in attemptsByWord.entries) {
-      final wordId = entry.key;
-      final wordAttempts = entry.value;
-      
-      // 获取当前状态，如果不存在则创建新状态
-      CardState currentState = states[wordId] ?? CardState.newCard(wordId);
-      
-        // 依次处理每次答题
-        for (final attempt in wordAttempts) {
-          final quality = calculateQuality(
-            result: attempt.result,
-            reactionTime: attempt.rtMs,
-            timeLimit: timeLimit,
-            baselineRtMs: currentState.rtP50 > 0 ? currentState.rtP50 : null,
-          );
-          final recallProb = _estimateRecallProbability(currentState);
-
-          currentState = updateCardState(
-            currentState,
-            quality,
-            recallProb: recallProb,
-          );
-        }
-      
-      // 更新反应时间中位数
-      final validRts = wordAttempts
-          .where((a) => a.result != AttemptResult.timeout)
-          .map((a) => a.rtMs)
-          .toList();
-      
-      if (validRts.isNotEmpty) {
-        validRts.sort();
-        final median = validRts.length % 2 == 0
-            ? ((validRts[validRts.length ~/ 2 - 1] + validRts[validRts.length ~/ 2]) / 2).round()
-            : validRts[validRts.length ~/ 2];
-        
-        currentState = currentState.copyWith(rtP50: median);
-      }
-      
-      updatedStates[wordId] = currentState;
-    }
-    
-    return updatedStates;
+    final rawInterval = config.gammaInterval * stability / difficulty;
+    return rawInterval.round().clamp(1, config.maxIntervalDays);
   }
 
-  /// 回忆概率估计
-  static double _estimateRecallProbability(CardState currentState) {
-    final hoursSinceReview = DateTime.now()
+  /// 回忆概率估计（P1 修复：采用 FSRS 幂律遗忘曲线）
+  ///
+  /// R = (1 + t / (9 * S))^(-1)
+  /// 比简单指数模型 e^(-t/S) 更符合认知科学研究。
+  static double estimateRecallProbability(
+    CardState currentState, {
+    DateTime? at,
+  }) {
+    final reviewTime = at ?? DateTime.now();
+    final minutesSinceReview = reviewTime
         .difference(currentState.lastReview)
         .inMinutes
-        .clamp(0, 60 * 24 * 365)
-        .toDouble();
-    final daysSinceReview = hoursSinceReview / (60 * 24);
+        .clamp(0, 60 * 24 * 365);
+    final daysSinceReview = minutesSinceReview.toDouble() / (60 * 24);
     final stability = max(0.5, currentState.stability);
-    final decay = daysSinceReview / stability;
-    return exp(-decay).clamp(0.0, 1.0);
+    // FSRS 幂律遗忘曲线
+    return pow(
+      1 + daysSinceReview / (9 * stability),
+      -1.0,
+    ).toDouble().clamp(0.0, 1.0);
   }
 
+  /// 根据回忆概率调整稳定度（P1 修复：限制最终惩罚下界）
   static double _adjustStabilityByRecall(
     double stability,
     int quality,
@@ -235,55 +264,137 @@ class SrsAlgorithm {
     if (recallProb == null) return stability;
     final clampedRecall = recallProb.clamp(0.0, 1.0);
     final factor = quality >= 3
-        ? 1 + (1 - clampedRecall) * 0.3
-        : 1 - clampedRecall * 0.2;
+        ? 1 +
+              (1 - clampedRecall) *
+                  0.3 // 成功 + recall低 → 加更多奖励
+        : max(0.85, 1 - clampedRecall * 0.15); // 失败惩罚限制在 ≥0.85
     return (stability * factor).clamp(0.5, 120.0);
   }
 
+  // ============================================================
+  // 批量操作
+  // ============================================================
+
+  /// 批量更新卡片状态
+  static Map<int, CardState> batchUpdateCardStates(
+    Map<int, CardState> states,
+    List<Attempt> attempts,
+    int timeLimit, {
+    double slowThresholdMultiplier = 1.5,
+    SrsConfig config = const SrsConfig(),
+  }) {
+    final updatedStates = <int, CardState>{};
+
+    // 按单词ID分组答题记录
+    final attemptsByWord = <int, List<Attempt>>{};
+    for (final attempt in attempts) {
+      attemptsByWord.putIfAbsent(attempt.wordId, () => []).add(attempt);
+    }
+
+    // 为每个单词更新状态
+    for (final entry in attemptsByWord.entries) {
+      final wordId = entry.key;
+      final wordAttempts = entry.value.toList()
+        ..sort((a, b) => a.timestamp.compareTo(b.timestamp));
+
+      CardState currentState = states[wordId] ?? CardState.newCard(wordId);
+
+      for (final attempt in wordAttempts) {
+        final elapsed = attempt.timestamp.difference(currentState.lastReview);
+        final shortTermReview =
+            attempt.isInSessionRetry || elapsed < const Duration(hours: 12);
+        final calculatedQuality = calculateQuality(
+          result: attempt.result,
+          reactionTime: attempt.rtMs,
+          timeLimit: timeLimit,
+          baselineRtMs: currentState.rtP50 > 0 ? currentState.rtP50 : null,
+          slowThresholdMultiplier: slowThresholdMultiplier,
+        );
+        // 提示后的正确只代表辅助完成；在兼容旧存储路径中也把它
+        // 限制为低质量成功，避免提示题带来完整稳定度奖励。
+        final quality = attempt.usedHint && calculatedQuality >= 3
+            ? 3
+            : calculatedQuality;
+        final recallProb = estimateRecallProbability(
+          currentState,
+          at: attempt.timestamp,
+        );
+
+        currentState = updateCardState(
+          currentState,
+          quality,
+          recallProb: recallProb,
+          reviewedAt: attempt.timestamp,
+          shortTermReview: shortTermReview,
+          countFailureAsLongTerm: !attempt.isInSessionRetry,
+          config: config,
+        );
+      }
+
+      // 更新反应时间中位数（仅统计正确作答且有效反应时间，避免错误/超时拉偏基线）
+      final validRts = wordAttempts
+          .where((a) => a.result == AttemptResult.correct && a.rtMs > 0)
+          .map((a) => a.rtMs)
+          .toList();
+
+      if (validRts.isNotEmpty) {
+        validRts.sort();
+        final median = validRts.length % 2 == 0
+            ? ((validRts[validRts.length ~/ 2 - 1] +
+                          validRts[validRts.length ~/ 2]) /
+                      2)
+                  .round()
+            : validRts[validRts.length ~/ 2];
+
+        // 使用指数滑动平均（EMA 70/30）平滑更新基线，防止单次波动冲垮历史基准
+        final nextRt = currentState.rtP50 <= 0
+            ? median
+            : ((currentState.rtP50 * 0.7) + (median * 0.3)).round();
+
+        currentState = currentState.copyWith(rtP50: nextRt);
+      }
+
+      updatedStates[wordId] = currentState;
+    }
+
+    return updatedStates;
+  }
+
+  // ============================================================
+  // 牌组与统计（使用 LeechPolicy 参数）
+  // ============================================================
+
   /// 获取今日牌组（到期词 + 不熟词）
-  /// 
-  /// [allStates] 所有卡片状态
-  /// [levels] 目标级别
-  /// [onlyLeeches] 是否只包含不熟词
-  /// 
-  /// 返回需要复习的单词ID列表
   static List<int> getTodayDeck(
     Map<int, CardState> allStates,
     Set<String> levels,
-    bool onlyLeeches,
-  ) {
+    bool onlyLeeches, {
+    LeechPolicy leechPolicy = const LeechPolicy(),
+    Map<int, String>? wordLevels,
+  }) {
     final today = DateTime.now();
     final todayWordIds = <int>[];
-    
+
     for (final state in allStates.values) {
-      // 检查是否到期
-      final isDue = state.due.isBefore(today) || 
-                    state.due.isAtSameMomentAs(today);
-      
-      // 检查是否为不熟词
-      final isLeech = state.isLeech;
-      
+      if (wordLevels != null && levels.isNotEmpty) {
+        final level = wordLevels[state.wordId];
+        if (level == null || !levels.contains(level)) continue;
+      }
+      final isDue =
+          state.due.isBefore(today) || state.due.isAtSameMomentAs(today);
+      final isLeech = leechPolicy.isLeech(state);
+
       if (onlyLeeches) {
-        // 只练不熟模式：只包含不熟词
-        if (isLeech) {
-          todayWordIds.add(state.wordId);
-        }
+        if (isLeech) todayWordIds.add(state.wordId);
       } else {
-        // 正常模式：包含到期词和不熟词
-        if (isDue || isLeech) {
-          todayWordIds.add(state.wordId);
-        }
+        if (isDue || isLeech) todayWordIds.add(state.wordId);
       }
     }
-    
+
     return todayWordIds;
   }
 
   /// 预测学习进度
-  /// 
-  /// [states] 卡片状态列表
-  /// 
-  /// 返回学习统计信息
   static Map<String, dynamic> predictProgress(List<CardState> states) {
     if (states.isEmpty) {
       return {
@@ -296,29 +407,29 @@ class SrsAlgorithm {
         'dueThisWeek': 0,
       };
     }
-    
+
     final now = DateTime.now();
     final weekFromNow = now.add(const Duration(days: 7));
-    
+
     int learnedCards = 0; // 稳定度 >= 7天
-    int masteredCards = 0; // 稳定度 >= 30天
+    int masteredCards = 0; // 稳定度和跨日成功复习共同满足
     int dueToday = 0;
     int dueThisWeek = 0;
-    
+
     double totalStability = 0;
     double totalDifficulty = 0;
-    
+
     for (final state in states) {
       totalStability += state.stability;
       totalDifficulty += state.difficulty;
-      
+
       if (state.stability >= 7) learnedCards++;
-      if (state.stability >= 30) masteredCards++;
-      
+      if (state.isMastered) masteredCards++;
+
       if (state.isDue) dueToday++;
       if (state.due.isBefore(weekFromNow)) dueThisWeek++;
     }
-    
+
     return {
       'totalCards': states.length,
       'learnedCards': learnedCards,

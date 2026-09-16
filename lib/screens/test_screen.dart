@@ -6,29 +6,14 @@ import '../session/session_models.dart';
 import '../models/question.dart';
 import '../theme/theme_style.dart';
 import '../theme/theme_manager.dart';
+import '../theme/fono_theme.dart';
+import '../theme/digitalism_theme.dart';
 import '../utils/responsive_layout.dart';
 import '../widgets/countdown_ring.dart';
 import '../widgets/option_button.dart';
 import 'summary_screen.dart';
 
 /// 解析主题风格字符串
-ThemeStyle _parseThemeStyle(String value) {
-  switch (value) {
-    case 'highContrast':
-      return ThemeStyle.highContrast;
-    case 'bauhaus':
-      return ThemeStyle.bauhaus;
-    case 'minimal':
-      return ThemeStyle.minimal;
-    case 'nature':
-      return ThemeStyle.nature;
-    case 'cyberpunk':
-      return ThemeStyle.cyberpunk;
-    default:
-      return ThemeStyle.standard;
-  }
-}
-
 /// 测试页面 - 支持多主题风格
 class TestScreen extends ConsumerStatefulWidget {
   final SessionConfig config;
@@ -41,10 +26,9 @@ class TestScreen extends ConsumerStatefulWidget {
 
 class _TestScreenState extends ConsumerState<TestScreen>
     with WidgetsBindingObserver {
-  
   SessionController? _sessionController;
   bool _navigatedToSummary = false;
-  
+
   @override
   void initState() {
     super.initState();
@@ -52,20 +36,34 @@ class _TestScreenState extends ConsumerState<TestScreen>
     _navigatedToSummary = false;
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      _sessionController = ref.read(sessionControllerProvider.notifier);
-      final settings = ref.read(appSettingsProvider);
-
-      if (settings.hasActiveSession) {
-        _sessionController?.startSession(
-          widget.config,
-          resumeSessionId: settings.currentSessionId,
-          remainingWordIds: settings.remainingWordIds,
-          currentProgress: settings.currentProgress,
-        );
-      } else {
-        _sessionController?.startSession(widget.config);
-      }
+      _startSessionFromCheckpoint();
     });
+  }
+
+  Future<void> _startSessionFromCheckpoint() async {
+    if (!mounted) return;
+    _sessionController = ref.read(sessionControllerProvider.notifier);
+    final settings = ref.read(appSettingsProvider);
+    final store = await ref.read(sessionCheckpointStoreProvider.future);
+    if (!mounted) return;
+    final checkpoint = store.load();
+    final sessionConfig =
+        SessionConfig.fromCheckpointMap(checkpoint?.config ?? {}) ??
+        widget.config;
+
+    if (settings.hasActiveSession) {
+      await _sessionController?.startSession(
+        sessionConfig,
+        resumeSessionId: settings.currentSessionId,
+        remainingWordIds: settings.remainingWordIds,
+        currentProgress: settings.currentProgress,
+        checkpoint: checkpoint?.sessionId == settings.currentSessionId
+            ? checkpoint
+            : null,
+      );
+    } else {
+      await _sessionController?.startSession(widget.config);
+    }
   }
 
   @override
@@ -85,28 +83,17 @@ class _TestScreenState extends ConsumerState<TestScreen>
     final sessionController = _sessionController;
     if (sessionController == null) return;
 
+    // 生命周期事件只暂停/恢复内存中的计时器，不等待存储。
+    // inactive / hidden / paused 可连续触发，控制器中的暂停是幂等的。
     switch (state) {
       case AppLifecycleState.paused:
       case AppLifecycleState.inactive:
-        Future.microtask(() {
-          if (!mounted) return;
-          sessionController.pauseSession();
-        });
+      case AppLifecycleState.hidden:
+      case AppLifecycleState.detached:
+        sessionController.pauseSession();
         break;
       case AppLifecycleState.resumed:
-        Future.microtask(() {
-          if (!mounted) return;
-          sessionController.resumeSession();
-        });
-        break;
-      case AppLifecycleState.detached:
-        Future.microtask(sessionController.stopSession);
-        break;
-      case AppLifecycleState.hidden:
-        Future.microtask(() {
-          if (!mounted) return;
-          sessionController.pauseSession();
-        });
+        sessionController.resumeSession();
         break;
     }
   }
@@ -114,9 +101,15 @@ class _TestScreenState extends ConsumerState<TestScreen>
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final sessionData = ref.watch(sessionControllerProvider);
+    // 精细化响应式：仅监听生命周期与题目有无，阻断倒计时高频重绘外层整树
+    ref.watch(
+      sessionControllerProvider.select(
+        (s) => (state: s.state, hasQuestion: s.currentQuestion != null),
+      ),
+    );
+    final sessionData = ref.read(sessionControllerProvider);
     final settings = ref.watch(appSettingsProvider);
-    final themeStyle = _parseThemeStyle(settings.themeStyle);
+    final themeStyle = ThemeStyle.fromString(settings.themeStyle);
     final gradientColors = ThemeManager.getGradientColors(themeStyle);
 
     return PopScope(
@@ -130,61 +123,51 @@ class _TestScreenState extends ConsumerState<TestScreen>
         }
       },
       child: Scaffold(
-        body: Container(
-          decoration: BoxDecoration(
-            gradient: gradientColors[0] == gradientColors[1]
-                ? null
-                : LinearGradient(
-                    begin: Alignment.topCenter,
-                    end: Alignment.bottomCenter,
-                    colors: gradientColors,
+        body: themeStyle == ThemeStyle.fono
+            ? FonoGridBackground(
+                child: Container(
+                  color: FonoTheme.background,
+                  child: _buildBody(
+                    context,
+                    theme,
+                    sessionData,
+                    settings,
+                    themeStyle,
                   ),
-            color: gradientColors[0] == gradientColors[1] ? gradientColors[0] : null,
-          ),
-          child: _buildBody(context, theme, sessionData, settings, themeStyle),
-        ),
+                ),
+              )
+            : Container(
+                decoration: BoxDecoration(
+                  gradient: gradientColors[0] == gradientColors[1]
+                      ? null
+                      : LinearGradient(
+                          begin: Alignment.topCenter,
+                          end: Alignment.bottomCenter,
+                          colors: gradientColors,
+                        ),
+                  color: gradientColors[0] == gradientColors[1]
+                      ? gradientColors[0]
+                      : null,
+                ),
+                child: _buildBody(
+                  context,
+                  theme,
+                  sessionData,
+                  settings,
+                  themeStyle,
+                ),
+              ),
       ),
     );
   }
 
   Future<bool> _handleWillPop() async {
-    final sessionData = ref.read(sessionControllerProvider);
-
-    if (sessionData.state == SessionState.finished) {
-      return true;
+    final controller = ref.read(sessionControllerProvider.notifier);
+    if (ref.read(sessionControllerProvider).state == SessionState.saving) {
+      return false;
     }
-
-    if (sessionData.state != SessionState.idle) {
-      await _saveTestProgress();
-    }
-
-    ref.read(sessionControllerProvider.notifier).stopSession();
+    controller.stopSession();
     return true;
-  }
-
-  Future<void> _saveTestProgress() async {
-    final sessionData = ref.read(sessionControllerProvider);
-    final settings = ref.read(appSettingsProvider.notifier);
-
-    if (sessionData.state == SessionState.idle ||
-        sessionData.state == SessionState.finished) {
-      return;
-    }
-
-    final remainingWordIds = <int>[];
-    remainingWordIds.addAll(sessionData.mainQueue.map((w) => w.id));
-    remainingWordIds.addAll(sessionData.delayedQueue.map((item) => item.wordId));
-
-    if (sessionData.currentQuestion != null) {
-      remainingWordIds.add(sessionData.currentQuestion!.word.id);
-    }
-
-    await settings.saveTestProgress(
-      sessionId: sessionData.sessionId,
-      currentProgress: sessionData.attempts.length,
-      totalWords: sessionData.config.wordsPerSession,
-      remainingWordIds: remainingWordIds,
-    );
   }
 
   Widget _buildBody(
@@ -200,7 +183,39 @@ class _TestScreenState extends ConsumerState<TestScreen>
         return _buildLoadingState(theme, themeStyle);
       case SessionState.waiting:
       case SessionState.resolved:
-        return _buildTestingState(context, theme, sessionData, settings, themeStyle);
+        return _buildTestingState(
+          context,
+          theme,
+          sessionData,
+          settings,
+          themeStyle,
+        );
+      case SessionState.saving:
+        return const Center(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              CircularProgressIndicator(),
+              SizedBox(height: 16),
+              Text('测试完成，正在保存…'),
+            ],
+          ),
+        );
+      case SessionState.saveFailed:
+        return Center(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Text('测试已完成，保存失败，答案仍保留在本次会话中。'),
+              const SizedBox(height: 16),
+              FilledButton(
+                onPressed: () =>
+                    ref.read(sessionControllerProvider.notifier).retrySave(),
+                child: const Text('重试保存'),
+              ),
+            ],
+          ),
+        );
       case SessionState.finished:
         if (!_navigatedToSummary) {
           _navigatedToSummary = true;
@@ -211,9 +226,12 @@ class _TestScreenState extends ConsumerState<TestScreen>
   }
 
   Widget _buildLoadingState(ThemeData theme, ThemeStyle themeStyle) {
-    final cardDecoration = ThemeManager.getCardDecoration(themeStyle, elevated: true);
+    final cardDecoration = ThemeManager.getCardDecoration(
+      themeStyle,
+      elevated: true,
+    );
     final textColor = ThemeManager.getTextColor(themeStyle);
-    
+
     return SafeArea(
       child: Center(
         child: Container(
@@ -224,7 +242,9 @@ class _TestScreenState extends ConsumerState<TestScreen>
             mainAxisSize: MainAxisSize.min,
             children: [
               CircularProgressIndicator(
-                valueColor: AlwaysStoppedAnimation<Color>(theme.colorScheme.primary),
+                valueColor: AlwaysStoppedAnimation<Color>(
+                  theme.colorScheme.primary,
+                ),
               ),
               const SizedBox(height: 24),
               Text(
@@ -255,8 +275,22 @@ class _TestScreenState extends ConsumerState<TestScreen>
 
     return ResponsiveLayout.buildResponsive(
       context: context,
-      mobile: _buildMobileTestLayout(context, theme, sessionData, settings, question, themeStyle),
-      tablet: _buildTabletTestLayout(context, theme, sessionData, settings, question, themeStyle),
+      mobile: _buildMobileTestLayout(
+        context,
+        theme,
+        sessionData,
+        settings,
+        question,
+        themeStyle,
+      ),
+      tablet: _buildTabletTestLayout(
+        context,
+        theme,
+        sessionData,
+        settings,
+        question,
+        themeStyle,
+      ),
     );
   }
 
@@ -273,92 +307,137 @@ class _TestScreenState extends ConsumerState<TestScreen>
     final borderRadius = ThemeManager.getBorderRadius(themeStyle);
     final textColor = ThemeManager.getTextColor(themeStyle);
     final surfaceColor = ThemeManager.getSurfaceColor(themeStyle);
-    
+
     return Consumer(
       builder: (context, ref, child) {
-        final currentSessionData = ref.watch(sessionControllerProvider);
+        // 精细化监听：过滤倒计时，仅在题目变动、状态迁移或用户交互时触发重绘
+        ref.watch(
+          sessionControllerProvider.select(
+            (s) => (
+              state: s.state,
+              isPaused: s.isPaused,
+              questionId: s.currentQuestion?.word.id,
+              selectedOption: s.selectedOption,
+              lastCorrect: s.lastCorrect,
+              currentProgress: s.currentProgress,
+              attemptsCount: s.attempts.length,
+            ),
+          ),
+        );
+        final currentSessionData = ref.read(sessionControllerProvider);
         final isPaused = currentSessionData.isPaused;
         final data = currentSessionData;
         final activeQuestion = data.currentQuestion ?? question;
-        
+
         return SafeArea(
           child: Stack(
             children: [
               // 主要内容
               Column(
                 children: [
-                  // 顶部进度栏
+                  // 顶部极简紧凑进度栏
                   Container(
-                    padding: const EdgeInsets.all(20),
-                    child: Column(
+                    padding: const EdgeInsets.fromLTRB(16, 6, 16, 2),
+                    child: Row(
                       children: [
-                        Row(
-                          children: [
-                            Expanded(
-                              child: Container(
-                                height: 6,
-                                decoration: BoxDecoration(
-                                  color: headerTextColor.withValues(alpha: 0.3),
-                                  borderRadius: BorderRadius.circular(3),
-                                ),
-                                child: LinearProgressIndicator(
-                                  value: data.attempts.length / data.config.wordsPerSession,
-                                  backgroundColor: Colors.transparent,
-                                  valueColor: AlwaysStoppedAnimation<Color>(headerTextColor),
-                                  borderRadius: BorderRadius.circular(3),
-                                ),
-                              ),
+                        // 紧凑进度数字徽章
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 8,
+                            vertical: 3,
+                          ),
+                          decoration: BoxDecoration(
+                            color: headerTextColor.withValues(alpha: 0.1),
+                            borderRadius: BorderRadius.circular(
+                              borderRadius > 6 ? 6 : borderRadius,
                             ),
-                            const SizedBox(width: 16),
-                            // 暂停按钮
-                            GestureDetector(
-                              onTap: () {
-                                final controller = ref.read(sessionControllerProvider.notifier);
-        debugPrint('Pause button tapped, isPaused=$isPaused, state=${currentSessionData.state}');
-                                if (isPaused) {
-                                  controller.resumeSession();
-                                } else {
-                                  controller.pauseSession();
-                                }
-                              },
-                              child: Container(
-                                padding: const EdgeInsets.all(8),
-                                decoration: BoxDecoration(
-                                  color: headerTextColor.withValues(alpha: 0.2),
-                                  borderRadius: BorderRadius.circular(borderRadius),
-                                ),
-                                child: Icon(
-                                  isPaused ? Icons.play_arrow : Icons.pause,
-                                  color: headerTextColor,
-                                  size: 20,
-                                ),
-                              ),
+                          ),
+                          child: Text(
+                            '${data.attempts.length + 1} / ${data.config.wordsPerSession}',
+                            style: TextStyle(
+                              color: headerTextColor,
+                              fontSize: 12,
+                              fontWeight: FontWeight.w700,
+                              fontFamily:
+                                  themeStyle == ThemeStyle.digitalism ||
+                                          themeStyle == ThemeStyle.fono
+                                      ? 'monospace'
+                                      : null,
+                              letterSpacing: -0.2,
                             ),
-                            const SizedBox(width: 8),
-                            // 重置按钮
-                            GestureDetector(
-                              onTap: () => _showResetConfirmDialog(context, ref),
-                              child: Container(
-                                padding: const EdgeInsets.all(8),
-                                decoration: BoxDecoration(
-                                  color: headerTextColor.withValues(alpha: 0.2),
-                                  borderRadius: BorderRadius.circular(borderRadius),
-                                ),
-                                child: Icon(
-                                  Icons.refresh,
-                                  color: headerTextColor,
-                                  size: 20,
-                                ),
-                              ),
-                            ),
-                          ],
+                          ),
                         ),
-                        const SizedBox(height: 12),
-                        Text(
-                          '${data.attempts.length + 1} / ${data.config.wordsPerSession}',
-                          style: theme.textTheme.titleMedium?.copyWith(
-                            color: headerTextColor,
-                            fontWeight: FontWeight.w600,
+                        const SizedBox(width: 10),
+                        // 细致进度条
+                        Expanded(
+                          child: Container(
+                            height: 4,
+                            decoration: BoxDecoration(
+                              color: headerTextColor.withValues(alpha: 0.15),
+                              borderRadius: BorderRadius.circular(2),
+                            ),
+                            child: ClipRRect(
+                              borderRadius: BorderRadius.circular(2),
+                              child: LinearProgressIndicator(
+                                value: data.config.wordsPerSession > 0
+                                    ? (data.attempts.length /
+                                            data.config.wordsPerSession)
+                                        .clamp(0.0, 1.0)
+                                    : 0.0,
+                                backgroundColor: Colors.transparent,
+                                valueColor: AlwaysStoppedAnimation<Color>(
+                                  headerTextColor,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        // 暂停按钮
+                        GestureDetector(
+                          onTap: () {
+                            final controller = ref.read(
+                              sessionControllerProvider.notifier,
+                            );
+                            if (isPaused) {
+                              controller.resumeSession();
+                            } else {
+                              controller.pauseSession();
+                            }
+                          },
+                          child: Container(
+                            padding: const EdgeInsets.all(5),
+                            decoration: BoxDecoration(
+                              color: headerTextColor.withValues(alpha: 0.1),
+                              borderRadius: BorderRadius.circular(
+                                borderRadius > 6 ? 6 : borderRadius,
+                              ),
+                            ),
+                            child: Icon(
+                              isPaused ? Icons.play_arrow : Icons.pause,
+                              color: headerTextColor,
+                              size: 16,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 6),
+                        // 重置按钮
+                        GestureDetector(
+                          onTap: () =>
+                              _showResetConfirmDialog(context, ref),
+                          child: Container(
+                            padding: const EdgeInsets.all(5),
+                            decoration: BoxDecoration(
+                              color: headerTextColor.withValues(alpha: 0.1),
+                              borderRadius: BorderRadius.circular(
+                                borderRadius > 6 ? 6 : borderRadius,
+                              ),
+                            ),
+                            child: Icon(
+                              Icons.refresh,
+                              color: headerTextColor,
+                              size: 16,
+                            ),
                           ),
                         ),
                       ],
@@ -368,48 +447,73 @@ class _TestScreenState extends ConsumerState<TestScreen>
                   // 主要内容卡片
                   Expanded(
                     child: Container(
-                      margin: const EdgeInsets.only(top: 20),
+                      margin: const EdgeInsets.only(top: 4),
                       decoration: contentDecoration,
                       child: Padding(
-                        padding: const EdgeInsets.fromLTRB(24, 16, 24, 24),
+                        padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
                         child: LayoutBuilder(
                           builder: (context, constraints) {
+                            final availableHeight = constraints.maxHeight;
+                            // 预估基础高度：单词区(~145) + 倒计时(~60) + 选项区(~236) ≈ 441
+                            final remaining =
+                                (availableHeight - 441).clamp(0.0, 1000.0);
+                            // 核心间距：单词与倒计时、倒计时与选项严格均等，控制在 20~40dp 黄金区间，绝不过大
+                            final double contentGap =
+                                (remaining * 0.20).clamp(18.0, 38.0);
+                            // 顶部与底部留白自适应分配剩余空间，保证单词在视觉上方、选项在大拇指黄金区
+                            final double topSpacing =
+                                (remaining * 0.16).clamp(12.0, 30.0);
+                            final double bottomSpacing =
+                                (remaining * 0.32).clamp(16.0, 56.0);
+
                             return SingleChildScrollView(
+                              physics: const ClampingScrollPhysics(),
                               child: ConstrainedBox(
-                                constraints: BoxConstraints(minHeight: constraints.maxHeight),
-                                child: IntrinsicHeight(
-                                  child: Column(
-                                    children: [
-                                      Flexible(
-                                        flex: 2,
-                                        child: SingleChildScrollView(
-                                              child: Column(
-                                            mainAxisAlignment: MainAxisAlignment.center,
-                                            children: [
-                                              _buildWordDisplay(context, theme, settings, activeQuestion, themeStyle),
-                                              const SizedBox(height: 16),
-                                              _buildWordBadges(context, theme, activeQuestion, themeStyle),
-                                            ],
-                                          ),
+                                constraints: BoxConstraints(
+                                  minHeight: constraints.maxHeight,
+                                ),
+                                child: Column(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    SizedBox(height: topSpacing),
+                                    // 单词展示与词性标签区
+                                    Column(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        _buildWordDisplay(
+                                          context,
+                                          theme,
+                                          settings,
+                                          activeQuestion,
+                                          themeStyle,
                                         ),
-                                      ),
-                                      Padding(
-                                        padding: const EdgeInsets.symmetric(vertical: 12),
-                                        child: CountdownRing(
-                                          totalTimeMs: data.config.timeLimitMs,
-                                          remainingTimeMs: data.millisLeft,
-                                          size: 80,
-                                          themeStyle: themeStyle,
+                                        const SizedBox(height: 8),
+                                        _buildWordBadges(
+                                          context,
+                                          theme,
+                                          activeQuestion,
+                                          themeStyle,
                                         ),
-                                      ),
-                                      Flexible(
-                                        flex: 2,
-                                        child: SingleChildScrollView(
-                                          child: _buildOptionButtons(context, theme, data, activeQuestion, themeStyle),
-                                        ),
-                                      ),
-                                    ],
-                                  ),
+                                      ],
+                                    ),
+                                    SizedBox(height: contentGap),
+                                    // 紧凑环形倒计时
+                                    _CountdownRingConsumer(
+                                      totalTimeMs: data.config.timeLimitMs,
+                                      size: 56,
+                                      themeStyle: themeStyle,
+                                    ),
+                                    SizedBox(height: contentGap),
+                                    // 4 个选项按钮
+                                    _buildOptionButtons(
+                                      context,
+                                      theme,
+                                      data,
+                                      activeQuestion,
+                                      themeStyle,
+                                    ),
+                                    SizedBox(height: bottomSpacing),
+                                  ],
                                 ),
                               ),
                             );
@@ -420,14 +524,16 @@ class _TestScreenState extends ConsumerState<TestScreen>
                   ),
                 ],
               ),
-              
+
               // 暂停遮罩
               if (isPaused)
                 Positioned.fill(
                   child: GestureDetector(
                     onTap: () {
                       // 点击遮罩恢复
-                      final controller = ref.read(sessionControllerProvider.notifier);
+                      final controller = ref.read(
+                        sessionControllerProvider.notifier,
+                      );
                       controller.resumeSession();
                     },
                     child: Container(
@@ -440,7 +546,9 @@ class _TestScreenState extends ConsumerState<TestScreen>
                               padding: const EdgeInsets.all(24),
                               decoration: BoxDecoration(
                                 color: surfaceColor,
-                                borderRadius: BorderRadius.circular(borderRadius),
+                                borderRadius: BorderRadius.circular(
+                                  borderRadius,
+                                ),
                               ),
                               child: Column(
                                 mainAxisSize: MainAxisSize.min,
@@ -453,10 +561,11 @@ class _TestScreenState extends ConsumerState<TestScreen>
                                   const SizedBox(height: 16),
                                   Text(
                                     '已暂停',
-                                    style: theme.textTheme.headlineSmall?.copyWith(
-                                      color: textColor,
-                                      fontWeight: FontWeight.bold,
-                                    ),
+                                    style: theme.textTheme.headlineSmall
+                                        ?.copyWith(
+                                          color: textColor,
+                                          fontWeight: FontWeight.bold,
+                                        ),
                                   ),
                                   const SizedBox(height: 8),
                                   Text(
@@ -492,14 +601,28 @@ class _TestScreenState extends ConsumerState<TestScreen>
     final textColor = ThemeManager.getTextColor(themeStyle);
     final surfaceColor = ThemeManager.getSurfaceColor(themeStyle);
     final borderRadius = ThemeManager.getBorderRadius(themeStyle);
-    
+
     return Consumer(
       builder: (context, ref, child) {
-        final currentSessionData = ref.watch(sessionControllerProvider);
+        // 精细化监听：过滤倒计时，仅在题目变动、状态迁移或用户交互时触发重绘
+        ref.watch(
+          sessionControllerProvider.select(
+            (s) => (
+              state: s.state,
+              isPaused: s.isPaused,
+              questionId: s.currentQuestion?.word.id,
+              selectedOption: s.selectedOption,
+              lastCorrect: s.lastCorrect,
+              currentProgress: s.currentProgress,
+              attemptsCount: s.attempts.length,
+            ),
+          ),
+        );
+        final currentSessionData = ref.read(sessionControllerProvider);
         final isPaused = currentSessionData.isPaused;
         final data = currentSessionData;
         final activeQuestion = data.currentQuestion ?? question;
-        
+
         return SafeArea(
           child: Stack(
             children: [
@@ -514,17 +637,39 @@ class _TestScreenState extends ConsumerState<TestScreen>
                         child: Column(
                           mainAxisAlignment: MainAxisAlignment.center,
                           children: [
-                            _buildWordDisplay(context, theme, settings, activeQuestion, themeStyle, isTablet: true),
+                            _buildWordDisplay(
+                              context,
+                              theme,
+                              settings,
+                              activeQuestion,
+                              themeStyle,
+                              isTablet: true,
+                            ),
                             const SizedBox(height: 24),
-                            _buildWordBadges(context, theme, activeQuestion, themeStyle, isTablet: true),
+                            _buildWordBadges(
+                              context,
+                              theme,
+                              activeQuestion,
+                              themeStyle,
+                              isTablet: true,
+                            ),
                             const SizedBox(height: 32),
-                            _buildProgressInfo(context, theme, data, themeStyle),
+                            _buildProgressInfo(
+                              context,
+                              theme,
+                              data,
+                              themeStyle,
+                            ),
                             const SizedBox(height: 16),
                             // 平板端暂停按钮
                             GestureDetector(
                               onTap: () {
-                                final controller = ref.read(sessionControllerProvider.notifier);
-        debugPrint('Tablet pause button tapped, isPaused=$isPaused, state=${currentSessionData.state}');
+                                final controller = ref.read(
+                                  sessionControllerProvider.notifier,
+                                );
+                                debugPrint(
+                                  'Tablet pause button tapped, isPaused=$isPaused, state=${currentSessionData.state}',
+                                );
                                 if (isPaused) {
                                   controller.resumeSession();
                                 } else {
@@ -532,12 +677,21 @@ class _TestScreenState extends ConsumerState<TestScreen>
                                 }
                               },
                               child: Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 24,
+                                  vertical: 12,
+                                ),
                                 decoration: BoxDecoration(
-                                  color: theme.colorScheme.primary.withValues(alpha: 0.1),
-                                  borderRadius: BorderRadius.circular(borderRadius),
+                                  color: theme.colorScheme.primary.withValues(
+                                    alpha: 0.1,
+                                  ),
+                                  borderRadius: BorderRadius.circular(
+                                    borderRadius,
+                                  ),
                                   border: Border.all(
-                                    color: theme.colorScheme.primary.withValues(alpha: 0.3),
+                                    color: theme.colorScheme.primary.withValues(
+                                      alpha: 0.3,
+                                    ),
                                   ),
                                 ),
                                 child: Row(
@@ -550,10 +704,11 @@ class _TestScreenState extends ConsumerState<TestScreen>
                                     const SizedBox(width: 8),
                                     Text(
                                       isPaused ? '继续' : '暂停',
-                                      style: theme.textTheme.titleMedium?.copyWith(
-                                        color: theme.colorScheme.primary,
-                                        fontWeight: FontWeight.w600,
-                                      ),
+                                      style: theme.textTheme.titleMedium
+                                          ?.copyWith(
+                                            color: theme.colorScheme.primary,
+                                            fontWeight: FontWeight.w600,
+                                          ),
                                     ),
                                   ],
                                 ),
@@ -562,12 +717,18 @@ class _TestScreenState extends ConsumerState<TestScreen>
                             const SizedBox(width: 12),
                             // 重置按钮
                             GestureDetector(
-                              onTap: () => _showResetConfirmDialog(context, ref),
+                              onTap: () =>
+                                  _showResetConfirmDialog(context, ref),
                               child: Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 24,
+                                  vertical: 12,
+                                ),
                                 decoration: BoxDecoration(
                                   color: Colors.red.withValues(alpha: 0.1),
-                                  borderRadius: BorderRadius.circular(borderRadius),
+                                  borderRadius: BorderRadius.circular(
+                                    borderRadius,
+                                  ),
                                   border: Border.all(
                                     color: Colors.red.withValues(alpha: 0.3),
                                   ),
@@ -582,10 +743,11 @@ class _TestScreenState extends ConsumerState<TestScreen>
                                     const SizedBox(width: 8),
                                     Text(
                                       '重置',
-                                      style: theme.textTheme.titleMedium?.copyWith(
-                                        color: Colors.red,
-                                        fontWeight: FontWeight.w600,
-                                      ),
+                                      style: theme.textTheme.titleMedium
+                                          ?.copyWith(
+                                            color: Colors.red,
+                                            fontWeight: FontWeight.w600,
+                                          ),
                                     ),
                                   ],
                                 ),
@@ -600,16 +762,21 @@ class _TestScreenState extends ConsumerState<TestScreen>
                       flex: 3,
                       child: Column(
                         children: [
-                          CountdownRing(
+                          _CountdownRingConsumer(
                             totalTimeMs: data.config.timeLimitMs,
-                            remainingTimeMs: data.millisLeft,
                             size: 120,
                             themeStyle: themeStyle,
                           ),
                           const SizedBox(height: 32),
                           Expanded(
                             child: SingleChildScrollView(
-                              child: _buildOptionButtons(context, theme, data, activeQuestion, themeStyle),
+                              child: _buildOptionButtons(
+                                context,
+                                theme,
+                                data,
+                                activeQuestion,
+                                themeStyle,
+                              ),
                             ),
                           ),
                         ],
@@ -618,13 +785,15 @@ class _TestScreenState extends ConsumerState<TestScreen>
                   ],
                 ),
               ),
-              
+
               // 暂停遮罩
               if (isPaused)
                 Positioned.fill(
                   child: GestureDetector(
                     onTap: () {
-                      final controller = ref.read(sessionControllerProvider.notifier);
+                      final controller = ref.read(
+                        sessionControllerProvider.notifier,
+                      );
                       controller.resumeSession();
                     },
                     child: Container(
@@ -679,6 +848,7 @@ class _TestScreenState extends ConsumerState<TestScreen>
         // 清除进行中的测试进度并刷新统计
         ref.read(appSettingsProvider.notifier).clearTestProgress();
         ref.invalidate(learningStatsProvider);
+        ref.invalidate(dailyHistorySummariesProvider);
 
         Navigator.of(context).pushReplacement(
           MaterialPageRoute(
@@ -697,49 +867,109 @@ class _TestScreenState extends ConsumerState<TestScreen>
     ThemeStyle themeStyle, {
     bool isTablet = false,
   }) {
+    if (themeStyle == ThemeStyle.digitalism) {
+      return DigitalismCard(
+        windowTitle: 'VOCABULARY // ${question.word.level.toUpperCase()}',
+        backgroundColor: DigitalismTheme.surface,
+        margin: EdgeInsets.zero,
+        padding: EdgeInsets.symmetric(
+          horizontal: isTablet ? 32 : 16,
+          vertical: isTablet ? 24 : 16,
+        ),
+        child: Column(
+          children: [
+            Text(
+              question.word.headword,
+              style:
+                  (isTablet
+                          ? theme.textTheme.displayMedium
+                          : theme.textTheme.headlineLarge)
+                      ?.copyWith(
+                        fontWeight: FontWeight.w900,
+                        letterSpacing: -0.5,
+                        color: DigitalismTheme.textPrimary,
+                        fontSize: isTablet ? null : 28,
+                      ),
+              textAlign: TextAlign.center,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+            ),
+            if (question.word.pos.isNotEmpty) ...[
+              SizedBox(height: isTablet ? 12 : 6),
+              Text(
+                question.word.pos,
+                style:
+                    (isTablet
+                            ? theme.textTheme.titleMedium
+                            : theme.textTheme.titleSmall)
+                        ?.copyWith(
+                          color: DigitalismTheme.textSecondary,
+                          fontStyle: FontStyle.italic,
+                          fontWeight: FontWeight.w700,
+                        ),
+                textAlign: TextAlign.center,
+              ),
+            ],
+          ],
+        ),
+      );
+    }
+
     final isDark = ThemeManager.isDarkTheme(themeStyle);
     final textColor = ThemeManager.getTextColor(themeStyle);
     final borderRadius = ThemeManager.getBorderRadius(themeStyle);
     final borderColor = ThemeManager.getBorderColor(themeStyle);
     final borderWidth = ThemeManager.getBorderWidth(themeStyle);
-    
-    final containerColor = isDark 
-        ? ThemeManager.getSurfaceColor(themeStyle) 
+
+    final containerColor = isDark
+        ? ThemeManager.getSurfaceColor(themeStyle)
         : theme.colorScheme.primaryContainer;
-    final contentTextColor = isDark 
-        ? textColor 
+    final contentTextColor = isDark
+        ? textColor
         : theme.colorScheme.onPrimaryContainer;
-    
+
     return Container(
       width: double.infinity,
-      padding: EdgeInsets.all(isTablet ? 32 : 24),
+      padding: EdgeInsets.symmetric(
+        horizontal: isTablet ? 32 : 16,
+        vertical: isTablet ? 24 : 16,
+      ),
       decoration: BoxDecoration(
         color: containerColor,
         borderRadius: BorderRadius.circular(borderRadius),
-        border: ThemeManager.needsBorder(themeStyle) 
-            ? Border.all(color: borderColor, width: borderWidth) 
+        border: ThemeManager.needsBorder(themeStyle)
+            ? Border.all(color: borderColor, width: borderWidth)
             : null,
       ),
       child: Column(
         children: [
           Text(
             question.word.headword,
-            style: (isTablet ? theme.textTheme.displayMedium : theme.textTheme.headlineLarge)?.copyWith(
-              fontWeight: FontWeight.bold,
-              color: contentTextColor,
-            ),
+            style:
+                (isTablet
+                        ? theme.textTheme.displayMedium
+                        : theme.textTheme.headlineLarge)
+                    ?.copyWith(
+                      fontWeight: FontWeight.bold,
+                      color: contentTextColor,
+                      fontSize: isTablet ? null : 28,
+                    ),
             textAlign: TextAlign.center,
             maxLines: 2,
             overflow: TextOverflow.ellipsis,
           ),
           if (question.word.pos.isNotEmpty) ...[
-            SizedBox(height: isTablet ? 12 : 8),
+            SizedBox(height: isTablet ? 12 : 4),
             Text(
               question.word.pos,
-              style: (isTablet ? theme.textTheme.titleMedium : theme.textTheme.titleSmall)?.copyWith(
-                color: contentTextColor.withValues(alpha: 0.8),
-                fontStyle: FontStyle.italic,
-              ),
+              style:
+                  (isTablet
+                          ? theme.textTheme.titleMedium
+                          : theme.textTheme.titleSmall)
+                      ?.copyWith(
+                        color: contentTextColor.withValues(alpha: 0.8),
+                        fontStyle: FontStyle.italic,
+                      ),
               textAlign: TextAlign.center,
             ),
           ],
@@ -760,52 +990,64 @@ class _TestScreenState extends ConsumerState<TestScreen>
     final surfaceColor = ThemeManager.getSurfaceColor(themeStyle);
     final borderRadius = ThemeManager.getBorderRadius(themeStyle);
     final borderColor = ThemeManager.getBorderColor(themeStyle);
-    
+
     final levelBgColor = isDark ? surfaceColor : theme.colorScheme.secondary;
     final levelTextColor = isDark ? textColor : theme.colorScheme.onSecondary;
     final posBgColor = isDark ? surfaceColor : theme.colorScheme.tertiary;
     final posTextColor = isDark ? textColor : theme.colorScheme.onTertiary;
-    
+
     return Wrap(
       alignment: WrapAlignment.center,
       spacing: isTablet ? 12 : 8,
-      runSpacing: 8,
+      runSpacing: 4,
       children: [
         Container(
           padding: EdgeInsets.symmetric(
-            horizontal: isTablet ? 16 : 12,
-            vertical: isTablet ? 8 : 6,
+            horizontal: isTablet ? 16 : 10,
+            vertical: isTablet ? 8 : 4,
           ),
           decoration: BoxDecoration(
             color: levelBgColor,
-            borderRadius: BorderRadius.circular(borderRadius),
+            borderRadius: BorderRadius.circular(
+              borderRadius > 6 ? 6 : borderRadius,
+            ),
             border: isDark ? Border.all(color: borderColor, width: 1) : null,
           ),
           child: Text(
             question.word.level,
-            style: (isTablet ? theme.textTheme.titleSmall : theme.textTheme.bodyMedium)?.copyWith(
-              color: levelTextColor,
-              fontWeight: FontWeight.w500,
-            ),
+            style:
+                (isTablet
+                        ? theme.textTheme.titleSmall
+                        : theme.textTheme.bodySmall)
+                    ?.copyWith(
+                      color: levelTextColor,
+                      fontWeight: FontWeight.w600,
+                    ),
           ),
         ),
         if (question.word.majorPos.isNotEmpty)
           Container(
             padding: EdgeInsets.symmetric(
-              horizontal: isTablet ? 16 : 12,
-              vertical: isTablet ? 8 : 6,
+              horizontal: isTablet ? 16 : 10,
+              vertical: isTablet ? 8 : 4,
             ),
             decoration: BoxDecoration(
               color: posBgColor,
-              borderRadius: BorderRadius.circular(borderRadius),
+              borderRadius: BorderRadius.circular(
+                borderRadius > 6 ? 6 : borderRadius,
+              ),
               border: isDark ? Border.all(color: borderColor, width: 1) : null,
             ),
             child: Text(
               question.word.majorPos,
-              style: (isTablet ? theme.textTheme.titleSmall : theme.textTheme.bodyMedium)?.copyWith(
-                color: posTextColor,
-                fontWeight: FontWeight.w500,
-              ),
+              style:
+                  (isTablet
+                          ? theme.textTheme.titleSmall
+                          : theme.textTheme.bodySmall)
+                      ?.copyWith(
+                        color: posTextColor,
+                        fontWeight: FontWeight.w600,
+                      ),
             ),
           ),
       ],
@@ -822,7 +1064,7 @@ class _TestScreenState extends ConsumerState<TestScreen>
     final cardDecoration = ThemeManager.getCardDecoration(themeStyle);
     final progressBgColor = ThemeManager.getProgressBackgroundColor(themeStyle);
     final progressColor = theme.colorScheme.primary;
-    
+
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: cardDecoration,
@@ -837,7 +1079,9 @@ class _TestScreenState extends ConsumerState<TestScreen>
           ),
           const SizedBox(height: 8),
           LinearProgressIndicator(
-            value: sessionData.attempts.length / sessionData.config.wordsPerSession,
+            value:
+                sessionData.attempts.length /
+                sessionData.config.wordsPerSession,
             backgroundColor: progressBgColor,
             valueColor: AlwaysStoppedAnimation<Color>(progressColor),
           ),
@@ -863,29 +1107,36 @@ class _TestScreenState extends ConsumerState<TestScreen>
   ) {
     return Column(
       mainAxisSize: MainAxisSize.min,
-      children: [
-        ...List.generate(
-          question.options.length,
-          (index) => Padding(
-            padding: const EdgeInsets.only(bottom: 8),
-            child: OptionButton(
-              text: question.options[index],
-              label: ['A', 'B', 'C', 'D'][index],
-              isSelected: sessionData.selectedOption == index,
-              isCorrect: sessionData.state == SessionState.resolved && index == question.correctIndex,
-              isWrong: sessionData.state == SessionState.resolved &&
-                  sessionData.selectedOption == index &&
-                  index != question.correctIndex,
-              isRevealed: sessionData.state == SessionState.resolved,
-              themeStyle: themeStyle,
-              onPressed: sessionData.state == SessionState.waiting
-                  ? () => ref.read(sessionControllerProvider.notifier).selectOption(index)
-                  : null,
-            ),
+      children: List.generate(
+        question.options.length,
+        (index) => OptionButton(
+          text: question.options[index],
+          label: ['A', 'B', 'C', 'D'][index],
+          padding: const EdgeInsets.symmetric(
+            horizontal: 14,
+            vertical: 11,
           ),
+          margin: const EdgeInsets.symmetric(
+            horizontal: 2,
+            vertical: 4,
+          ),
+          isSelected: sessionData.selectedOption == index,
+          isCorrect:
+              sessionData.state == SessionState.resolved &&
+              index == question.correctIndex,
+          isWrong:
+              sessionData.state == SessionState.resolved &&
+              sessionData.selectedOption == index &&
+              index != question.correctIndex,
+          isRevealed: sessionData.state == SessionState.resolved,
+          themeStyle: themeStyle,
+          onPressed: sessionData.state == SessionState.waiting
+              ? () => ref
+                    .read(sessionControllerProvider.notifier)
+                    .selectOption(index)
+              : null,
         ),
-        const SizedBox(height: 16),
-      ],
+      ),
     );
   }
 
@@ -893,7 +1144,7 @@ class _TestScreenState extends ConsumerState<TestScreen>
   void _showResetConfirmDialog(BuildContext context, WidgetRef ref) {
     // 先暂停测试
     ref.read(sessionControllerProvider.notifier).pauseSession();
-    
+
     showDialog(
       context: context,
       barrierDismissible: false,
@@ -912,8 +1163,7 @@ class _TestScreenState extends ConsumerState<TestScreen>
           TextButton(
             onPressed: () async {
               Navigator.of(dialogContext).pop();
-              // 清除进度并重新开始
-              await ref.read(appSettingsProvider.notifier).clearTestProgress();
+              // 重置仅操作本轮内存；整轮完成前不保存进度。
               // 重新开始测试：保持本轮单词集合，顺序重新打乱
               await ref
                   .read(sessionControllerProvider.notifier)
@@ -924,6 +1174,32 @@ class _TestScreenState extends ConsumerState<TestScreen>
           ),
         ],
       ),
+    );
+  }
+}
+
+/// 局部倒计时渲染组件，将 50ms 高频更新完全隔离在此 Widget 内部，避免上层整树重绘
+class _CountdownRingConsumer extends ConsumerWidget {
+  final int totalTimeMs;
+  final double size;
+  final ThemeStyle themeStyle;
+
+  const _CountdownRingConsumer({
+    required this.totalTimeMs,
+    required this.size,
+    required this.themeStyle,
+  });
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final millisLeft = ref.watch(
+      sessionControllerProvider.select((s) => s.millisLeft),
+    );
+    return CountdownRing(
+      totalTimeMs: totalTimeMs,
+      remainingTimeMs: millisLeft,
+      size: size,
+      themeStyle: themeStyle,
     );
   }
 }

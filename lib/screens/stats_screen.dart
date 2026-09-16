@@ -5,6 +5,7 @@ import '../theme/theme_manager.dart';
 import '../theme/theme_style.dart';
 import '../widgets/charts/activity_chart.dart';
 import '../widgets/charts/level_progress_chart.dart';
+import '../widgets/calendar/pocket_calendar_widget.dart';
 
 /// 学习统计详情页
 class StatsScreen extends ConsumerWidget {
@@ -14,7 +15,7 @@ class StatsScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
     final settings = ref.watch(appSettingsProvider);
-    final themeStyle = _parseThemeStyle(settings.themeStyle);
+    final themeStyle = ThemeStyle.fromString(settings.themeStyle);
     final statsAsync = ref.watch(learningStatsProvider);
 
     final textColor = ThemeManager.getTextColor(themeStyle);
@@ -67,10 +68,62 @@ class StatsScreen extends ConsumerWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                // 1. 核心指标概览
+                // 1. Pocket Cal 风格月度学习日历与重点词看板（置顶第一位显示）
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Expanded(
+                      child: _buildSectionHeader(
+                        context,
+                        '月度学习日历',
+                        textColor,
+                        subtitle: '每日打卡与重点词透视',
+                      ),
+                    ),
+                    TextButton.icon(
+                      onPressed: () =>
+                          Navigator.of(context).pushNamed('/daily_history'),
+                      icon: const Icon(Icons.history_rounded, size: 16),
+                      label: const Text(
+                        '完整档案',
+                        style: TextStyle(fontSize: 12),
+                      ),
+                      style: TextButton.styleFrom(
+                        foregroundColor: ThemeManager.getPrimaryColor(
+                          themeStyle,
+                        ),
+                        padding: const EdgeInsets.symmetric(horizontal: 4),
+                        visualDensity: VisualDensity.compact,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 16),
+                PocketCalendarWidget(
+                  themeStyle: themeStyle,
+                  onOpenDailyHistory: (date) {
+                    Navigator.of(context).pushNamed('/daily_history');
+                  },
+                ),
+
+                const SizedBox(height: 24),
+                _buildSectionDivider(themeStyle),
+                const SizedBox(height: 24),
+
+                // 2. 核心指标概览
                 _buildSectionHeader(context, '核心指标', textColor),
                 const SizedBox(height: 16),
                 _buildDetailGrid(context, theme, themeStyle, stats),
+
+                const SizedBox(height: 16),
+                // 每日测试档案与重点复盘 二级菜单卡片
+                _buildDailyHistoryEntryCard(
+                  context,
+                  ref,
+                  themeStyle,
+                  textColor,
+                  ThemeManager.getSecondaryTextColor(themeStyle),
+                ),
 
                 const SizedBox(height: 24),
                 _buildSectionDivider(themeStyle),
@@ -99,6 +152,14 @@ class StatsScreen extends ConsumerWidget {
                 _buildSectionHeader(context, '准确率分析', textColor),
                 const SizedBox(height: 16),
                 _buildPerformanceSection(context, themeStyle, stats),
+
+                const SizedBox(height: 24),
+                _buildSectionDivider(themeStyle),
+                const SizedBox(height: 24),
+
+                _buildSectionHeader(context, '跨日回忆观察', textColor),
+                const SizedBox(height: 16),
+                _buildObservationSection(context, themeStyle, stats),
 
                 const SizedBox(height: 24),
                 _buildSectionDivider(themeStyle),
@@ -195,6 +256,100 @@ class StatsScreen extends ConsumerWidget {
     );
   }
 
+  Widget _buildObservationSection(
+    BuildContext context,
+    ThemeStyle style,
+    Map<String, dynamic> stats,
+  ) {
+    Map<String, dynamic> metric(String key) =>
+        Map<String, dynamic>.from(stats[key] as Map? ?? const {});
+    final seven = metric('observation7d');
+    final thirty = metric('observation30d');
+    final coverage = (stats['skillCoverage'] as List<dynamic>? ?? const [])
+        .whereType<Map>()
+        .map((value) => Map<String, dynamic>.from(value))
+        .toList();
+    String rate(Map<String, dynamic> value) {
+      final eligible = (value['eligibleCount'] as num?)?.toInt() ?? 0;
+      final success = (value['successRate'] as num?)?.toDouble();
+      if (eligible == 0 || success == null) return '暂无样本';
+      return '${(success * 100).toStringAsFixed(0)}%（$eligible 个）';
+    }
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(16),
+      decoration: ThemeManager.getCardDecoration(style, elevated: false),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  '7 天窗口',
+                  style: Theme.of(context).textTheme.titleSmall,
+                ),
+              ),
+              Text(
+                rate(seven),
+                style: TextStyle(
+                  color: ThemeManager.getPrimaryColor(style),
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  '30 天窗口',
+                  style: Theme.of(context).textTheme.titleSmall,
+                ),
+              ),
+              Text(
+                rate(thirty),
+                style: TextStyle(
+                  color: ThemeManager.getCorrectColor(style),
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Text(
+            '只统计到期、未看答案且跨过窗口的首次回忆；没有样本不会被算成失败。',
+            style: TextStyle(
+              color: ThemeManager.getSecondaryTextColor(style),
+              fontSize: 11,
+            ),
+          ),
+          if (coverage.isNotEmpty) ...[
+            const SizedBox(height: 14),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: coverage.map((item) {
+                final skill = item['skill'] as String? ?? 'unknown';
+                final count = (item['distinctWordCount'] as num?)?.toInt() ?? 0;
+                final accuracy =
+                    (item['practiceAccuracy'] as num?)?.toDouble() ?? 0;
+                return Chip(
+                  label: Text(
+                    '$skill · $count 词 · ${(accuracy * 100).toStringAsFixed(0)}%',
+                  ),
+                  visualDensity: VisualDensity.compact,
+                );
+              }).toList(),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
   Widget _buildSectionDivider(ThemeStyle style) {
     return Divider(
       height: 1,
@@ -258,6 +413,120 @@ class StatsScreen extends ConsumerWidget {
         const SizedBox(width: 4),
         Text(label, style: TextStyle(color: textColor, fontSize: 11)),
       ],
+    );
+  }
+
+  /// 构建每日测试档案与重点复盘二级入口卡片
+  Widget _buildDailyHistoryEntryCard(
+    BuildContext context,
+    WidgetRef ref,
+    ThemeStyle themeStyle,
+    Color textColor,
+    Color secondaryTextColor,
+  ) {
+    final primaryColor = ThemeManager.getPrimaryColor(themeStyle);
+    final summariesAsync = ref.watch(dailyHistorySummariesProvider);
+
+    return summariesAsync.when(
+      data: (summaries) {
+        final today = DateTime.now();
+        final todaySummary = summaries
+            .where(
+              (s) =>
+                  s.date.year == today.year &&
+                  s.date.month == today.month &&
+                  s.date.day == today.day,
+            )
+            .firstOrNull;
+
+        final sessionCount = todaySummary?.sessionCount ?? 0;
+        final focusWordCount = todaySummary?.focusWords.length ?? 0;
+
+        return GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: () => Navigator.of(context).pushNamed('/daily_history'),
+          child: Container(
+            padding: const EdgeInsets.all(16),
+            decoration: ThemeManager.getCardDecoration(
+              themeStyle,
+              elevated: true,
+            ),
+            child: Row(
+              children: [
+                Container(
+                  width: 48,
+                  height: 48,
+                  decoration: BoxDecoration(
+                    color: primaryColor.withValues(alpha: 0.15),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Icon(
+                    Icons.auto_stories_rounded,
+                    color: primaryColor,
+                    size: 26,
+                  ),
+                ),
+                const SizedBox(width: 14),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Text(
+                            '每日测试档案与重点复盘',
+                            style: TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.bold,
+                              color: textColor,
+                            ),
+                          ),
+                          const SizedBox(width: 6),
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 6,
+                              vertical: 2,
+                            ),
+                            decoration: BoxDecoration(
+                              color: Colors.orange.withValues(alpha: 0.15),
+                              borderRadius: BorderRadius.circular(4),
+                            ),
+                            child: const Text(
+                              'NEW',
+                              style: TextStyle(
+                                fontSize: 10,
+                                fontWeight: FontWeight.bold,
+                                color: Colors.orange,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        sessionCount > 0
+                            ? '今日已测 $sessionCount 轮 · 提炼出 $focusWordCount 个重点待巩固词'
+                            : '按天归档历次测试，精准提炼重点记忆单词',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: secondaryTextColor,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                Icon(
+                  Icons.arrow_forward_ios_rounded,
+                  size: 16,
+                  color: secondaryTextColor.withValues(alpha: 0.5),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+      loading: () => const SizedBox.shrink(),
+      error: (_, __) => const SizedBox.shrink(),
     );
   }
 
@@ -1056,20 +1325,25 @@ class StatsScreen extends ConsumerWidget {
     Map<String, dynamic> stats,
   ) {
     // 累计时长显示优化
-    final totalMinutes = stats['totalDurationMinutes'] as int? ?? 0;
+    final totalDurationMs =
+        stats['totalDurationMs'] as int? ??
+        ((stats['totalDurationMinutes'] as int? ?? 0) * 60000);
     String timeDisplay;
     String timeUnit;
 
-    if (totalMinutes < 60) {
-      timeDisplay = '$totalMinutes';
+    if (totalDurationMs < 60000) {
+      timeDisplay = '${(totalDurationMs / 1000).round()}';
+      timeUnit = '秒';
+    } else if (totalDurationMs < 3600000) {
+      timeDisplay = '${(totalDurationMs / 60000).round()}';
       timeUnit = '分钟';
     } else {
-      timeDisplay = (totalMinutes / 60).toStringAsFixed(1);
+      timeDisplay = (totalDurationMs / 3600000).toStringAsFixed(1);
       timeUnit = '小时';
     }
 
     // 留存率
-    final retention = ((stats['retentionRate'] ?? 0) * 100).toInt();
+    final retention = (stats['retentionRate'] as double? ?? 0.0) * 100;
 
     return LayoutBuilder(
       builder: (context, constraints) {
@@ -1122,7 +1396,7 @@ class StatsScreen extends ConsumerWidget {
               theme,
               style,
               '记忆留存',
-              '$retention',
+              retention.toStringAsFixed(1),
               unit: '%',
               icon: Icons.psychology_outlined,
               color: ThemeManager.getPrimaryColor(style),
@@ -1203,23 +1477,6 @@ class StatsScreen extends ConsumerWidget {
         ],
       ),
     );
-  }
-
-  ThemeStyle _parseThemeStyle(String value) {
-    switch (value) {
-      case 'highContrast':
-        return ThemeStyle.highContrast;
-      case 'bauhaus':
-        return ThemeStyle.bauhaus;
-      case 'minimal':
-        return ThemeStyle.minimal;
-      case 'nature':
-        return ThemeStyle.nature;
-      case 'cyberpunk':
-        return ThemeStyle.cyberpunk;
-      default:
-        return ThemeStyle.standard;
-    }
   }
 
   Widget _buildPill(ThemeStyle style, String label, Color color) {
@@ -1348,7 +1605,7 @@ class StatsScreen extends ConsumerWidget {
                 ),
               ),
               Text(
-                '${retention.toInt()}%',
+                '${retention.toStringAsFixed(1)}%',
                 style: TextStyle(
                   fontSize: 11,
                   fontWeight: FontWeight.bold,
@@ -1371,7 +1628,6 @@ class StatsScreen extends ConsumerWidget {
       ),
     );
   }
-
 
   Widget _buildSummaryFooter(
     BuildContext context,

@@ -6,11 +6,28 @@ class Question {
   final List<String> options; // 长度固定为4的选项列表
   final int correctIndex; // 正确答案在options中的索引
 
-  const Question({
+  Question({
     required this.word,
     required this.options,
     required this.correctIndex,
-  }) : assert(options.length == 4, 'Options must have exactly 4 items');
+  }) {
+    if (options.length != 4) {
+      throw ArgumentError.value(
+        options.length,
+        'options.length',
+        'Options must have exactly 4 items',
+      );
+    }
+    if (correctIndex < 0 || correctIndex >= options.length) {
+      throw RangeError.range(
+        correctIndex,
+        0,
+        options.length - 1,
+        'correctIndex',
+        'Correct index must be within options range',
+      );
+    }
+  }
 
   /// 获取正确答案
   String get correctAnswer => options[correctIndex];
@@ -30,5 +47,6 @@ class Question {
   }
 
   @override
-  String toString() => 'Question(word: ${word.headword}, options: $options, correctIndex: $correctIndex)';
+  String toString() =>
+      'Question(word: ${word.headword}, options: $options, correctIndex: $correctIndex)';
 }

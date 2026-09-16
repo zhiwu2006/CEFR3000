@@ -3,15 +3,15 @@ import 'package:flutter/material.dart';
 /// 响应式布局工具类
 class ResponsiveLayout {
   // 屏幕断点
-  static const double mobileMaxWidth = 600;      // 手机最大宽度
-  static const double tabletMinWidth = 601;      // 平板最小宽度  
-  static const double tabletMaxWidth = 1200;     // 平板最大宽度
-  static const double desktopMinWidth = 1201;    // 桌面最小宽度
+  static const double mobileMaxWidth = 600; // 手机最大宽度
+  static const double tabletMinWidth = 601; // 平板最小宽度
+  static const double tabletMaxWidth = 1200; // 平板最大宽度
+  static const double desktopMinWidth = 1201; // 桌面最小宽度
 
   /// 获取设备类型
   static DeviceType getDeviceType(BuildContext context) {
     final screenWidth = MediaQuery.of(context).size.width;
-    
+
     if (screenWidth <= mobileMaxWidth) {
       return DeviceType.mobile;
     } else if (screenWidth <= tabletMaxWidth) {
@@ -47,21 +47,26 @@ class ResponsiveLayout {
     final size = MediaQuery.of(context).size;
     final width = size.width;
     final height = size.height;
-    
+
     // 判断是否为横屏
     final isLandscape = width > height;
-    
+
     if (width <= mobileMaxWidth) {
-      return isLandscape ? ScreenSize.mobileLandscape : ScreenSize.mobilePortrait;
+      return isLandscape
+          ? ScreenSize.mobileLandscape
+          : ScreenSize.mobilePortrait;
     } else if (width <= tabletMaxWidth) {
-      return isLandscape ? ScreenSize.tabletLandscape : ScreenSize.tabletPortrait;
+      return isLandscape
+          ? ScreenSize.tabletLandscape
+          : ScreenSize.tabletPortrait;
     } else {
       return ScreenSize.desktop;
     }
   }
 
   /// 获取适应屏幕尺寸的间距
-  static double getSpacing(BuildContext context, {
+  static double getSpacing(
+    BuildContext context, {
     double mobile = 8.0,
     double tablet = 16.0,
     double desktop = 24.0,
@@ -77,7 +82,8 @@ class ResponsiveLayout {
   }
 
   /// 获取适应屏幕尺寸的字体大小
-  static double getFontSize(BuildContext context, {
+  static double getFontSize(
+    BuildContext context, {
     required double baseFontSize,
     double mobileScale = 1.0,
     double tabletScale = 1.2,
@@ -106,7 +112,8 @@ class ResponsiveLayout {
   }
 
   /// 获取列数（用于网格布局）
-  static int getColumnCount(BuildContext context, {
+  static int getColumnCount(
+    BuildContext context, {
     int mobileColumns = 1,
     int tabletColumns = 2,
     int desktopColumns = 3,
@@ -210,7 +217,7 @@ class ResponsiveLayout {
   }) {
     final maxWidth = getContentMaxWidth(context);
     final actualPadding = padding ?? getPagePadding(context);
-    
+
     return Center(
       child: Container(
         constraints: BoxConstraints(maxWidth: maxWidth),
@@ -222,11 +229,7 @@ class ResponsiveLayout {
 }
 
 /// 设备类型枚举
-enum DeviceType {
-  mobile,
-  tablet,
-  desktop,
-}
+enum DeviceType { mobile, tablet, desktop }
 
 /// 屏幕尺寸枚举
 enum ScreenSize {

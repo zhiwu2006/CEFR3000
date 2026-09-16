@@ -75,34 +75,33 @@ class TestRunAdapter extends TypeAdapter<TestRun> {
 // **************************************************************************
 
 TestRun _$TestRunFromJson(Map<String, dynamic> json) => TestRun(
-      id: json['id'] as String,
-      startedAt: DateTime.parse(json['startedAt'] as String),
-      finishedAt: json['finishedAt'] == null
-          ? null
-          : DateTime.parse(json['finishedAt'] as String),
-      size: (json['size'] as num).toInt(),
-      levels:
-          (json['levels'] as List<dynamic>).map((e) => e as String).toList(),
-      timeLimitMs: (json['timeLimitMs'] as num).toInt(),
-      accuracy: (json['accuracy'] as num?)?.toDouble(),
-      avgRtMs: (json['avgRtMs'] as num?)?.toInt(),
-      attempts: (json['attempts'] as List<dynamic>)
-          .map((e) => Attempt.fromJson(e as Map<String, dynamic>))
-          .toList(),
-      orderPolicy: json['orderPolicy'] as String,
-      onlyLeeches: json['onlyLeeches'] as bool,
-    );
+  id: json['id'] as String,
+  startedAt: DateTime.parse(json['startedAt'] as String),
+  finishedAt: json['finishedAt'] == null
+      ? null
+      : DateTime.parse(json['finishedAt'] as String),
+  size: (json['size'] as num).toInt(),
+  levels: (json['levels'] as List<dynamic>).map((e) => e as String).toList(),
+  timeLimitMs: (json['timeLimitMs'] as num).toInt(),
+  accuracy: (json['accuracy'] as num?)?.toDouble(),
+  avgRtMs: (json['avgRtMs'] as num?)?.toInt(),
+  attempts: (json['attempts'] as List<dynamic>)
+      .map((e) => Attempt.fromJson(e as Map<String, dynamic>))
+      .toList(),
+  orderPolicy: json['orderPolicy'] as String,
+  onlyLeeches: json['onlyLeeches'] as bool,
+);
 
 Map<String, dynamic> _$TestRunToJson(TestRun instance) => <String, dynamic>{
-      'id': instance.id,
-      'startedAt': instance.startedAt.toIso8601String(),
-      'finishedAt': instance.finishedAt?.toIso8601String(),
-      'size': instance.size,
-      'levels': instance.levels,
-      'timeLimitMs': instance.timeLimitMs,
-      'accuracy': instance.accuracy,
-      'avgRtMs': instance.avgRtMs,
-      'attempts': instance.attempts,
-      'orderPolicy': instance.orderPolicy,
-      'onlyLeeches': instance.onlyLeeches,
-    };
+  'id': instance.id,
+  'startedAt': instance.startedAt.toIso8601String(),
+  'finishedAt': instance.finishedAt?.toIso8601String(),
+  'size': instance.size,
+  'levels': instance.levels,
+  'timeLimitMs': instance.timeLimitMs,
+  'accuracy': instance.accuracy,
+  'avgRtMs': instance.avgRtMs,
+  'attempts': instance.attempts,
+  'orderPolicy': instance.orderPolicy,
+  'onlyLeeches': instance.onlyLeeches,
+};

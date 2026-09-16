@@ -14,6 +14,6 @@ class WordStudyStatus {
   });
 
   bool get isLearned => state != null;
-  bool get isMastered => state != null && state!.stability > 16;
+  bool get isMastered => state?.isMastered ?? false;
   DateTime? get lastReview => state?.lastReview;
 }

@@ -2,6 +2,7 @@ import 'dart:math';
 import 'package:flutter/foundation.dart';
 
 import '../models/models.dart';
+import 'srs.dart';
 
 /// 测试集生成器
 class TestSetGenerator {
@@ -10,7 +11,7 @@ class TestSetGenerator {
   TestSetGenerator({int? seed}) : _random = Random(seed);
 
   /// 生成测试集
-  /// 
+  ///
   /// [allWords] 所有可用单词
   /// [levels] 目标级别
   /// [size] 题目数量
@@ -18,7 +19,7 @@ class TestSetGenerator {
   /// [onlyLeeches] 是否只练不熟
   /// [leechWords] 不熟单词列表（当onlyLeeches为true时使用）
   /// [dueWords] 到期单词列表
-  /// 
+  ///
   /// 返回选中的单词列表
   List<Word> generateTestSet({
     required List<Word> allWords,
@@ -37,7 +38,7 @@ class TestSetGenerator {
     debugPrint('Only leeches: $onlyLeeches');
     debugPrint('Leech words: ${leechWords?.length}');
     debugPrint('Due words: ${dueWords?.length}');
-    
+
     List<Word> candidateWords;
 
     if (onlyLeeches && leechWords != null && leechWords.isNotEmpty) {
@@ -65,13 +66,17 @@ class TestSetGenerator {
           .toList();
       debugPrint('Fallback to all level words: ${candidateWords.length}');
     }
-    
+
     // 检查是否有足够的单词
     if (candidateWords.length < size) {
       debugPrint('WARNING: Not enough words available!');
-      debugPrint('Requested: $size words, Available: ${candidateWords.length} words');
-      debugPrint('Available levels: ${candidateWords.map((w) => w.level).toSet()}');
-      
+      debugPrint(
+        'Requested: $size words, Available: ${candidateWords.length} words',
+      );
+      debugPrint(
+        'Available levels: ${candidateWords.map((w) => w.level).toSet()}',
+      );
+
       // 建议用户选择更多级别
       final availableLevels = allWords.map((w) => w.level).toSet();
       final missingLevels = availableLevels.difference(levels);
@@ -92,16 +97,18 @@ class TestSetGenerator {
       default:
         orderedWords = _orderByLevel(candidateWords);
     }
-    
+
     debugPrint('Ordered words: ${orderedWords.length}');
 
     // 选择指定数量的词（如果不够就全部选择）
     final actualSize = min(size, orderedWords.length);
     final result = orderedWords.take(actualSize).toList();
-    
+
     debugPrint('Final test set size: ${result.length} (requested: $size)');
-    debugPrint('Final test set: ${result.map((w) => '${w.headword}(${w.level})').take(10).toList()}');
-    
+    debugPrint(
+      'Final test set: ${result.map((w) => '${w.headword}(${w.level})').take(10).toList()}',
+    );
+
     return result;
   }
 
@@ -114,7 +121,7 @@ class TestSetGenerator {
   }) {
     final candidates = <Word>[];
     final usedIds = <int>{};
-    
+
     debugPrint('=== _selectCandidateWords ===');
     debugPrint('All words: ${allWords.length}');
     debugPrint('Due words: ${dueWords.length}');
@@ -122,42 +129,42 @@ class TestSetGenerator {
 
     // 1. 添加到期词
     for (final word in dueWords) {
-      if (levels.contains(word.level) && 
-          candidates.length < targetSize && 
+      if (levels.contains(word.level) &&
+          candidates.length < targetSize &&
           !usedIds.contains(word.id)) {
         candidates.add(word);
         usedIds.add(word.id);
       }
     }
-    
+
     debugPrint('After adding due words: ${candidates.length}');
 
     // 2. 如果还需要更多词，从所有符合级别的词中随机选择
     if (candidates.length < targetSize) {
       final remainingWords = allWords
-          .where((word) => 
-              levels.contains(word.level) && 
-              !usedIds.contains(word.id))
+          .where(
+            (word) => levels.contains(word.level) && !usedIds.contains(word.id),
+          )
           .toList();
-      
+
       debugPrint('Remaining words available: ${remainingWords.length}');
 
       remainingWords.shuffle(_random);
-      
+
       final needed = targetSize - candidates.length;
       final toAdd = remainingWords.take(needed);
       candidates.addAll(toAdd);
-      
+
       debugPrint('Added ${toAdd.length} additional words');
     }
-    
+
     debugPrint('Final candidates: ${candidates.length}');
     return candidates;
   }
 
-  /// 按级别排序（A1 -> A2 -> B1 -> B2，级内随机）
+  /// 按级别排序（A1 -> A2 -> B1 -> B2 -> C1 -> C2，级内随机）
   List<Word> _orderByLevel(List<Word> words) {
-    final levelOrder = ['A1', 'A2', 'B1', 'B2'];
+    final levelOrder = ['A1', 'A2', 'B1', 'B2', 'C1', 'C2'];
     final grouped = <String, List<Word>>{};
 
     // 按级别分组
@@ -165,13 +172,23 @@ class TestSetGenerator {
       grouped.putIfAbsent(word.level, () => []).add(word);
     }
 
-    // 按级别顺序组合，级内随机
+    // 按标准级别顺序组合，级内随机
     final result = <Word>[];
     for (final level in levelOrder) {
       if (grouped.containsKey(level)) {
         final levelWords = grouped[level]!;
         levelWords.shuffle(_random);
         result.addAll(levelWords);
+      }
+    }
+
+    // 兜底：处理未在预设列表中的扩展级别词汇，防止意外吞词
+    final handledLevels = levelOrder.toSet();
+    for (final entry in grouped.entries) {
+      if (!handledLevels.contains(entry.key)) {
+        final extraWords = entry.value;
+        extraWords.shuffle(_random);
+        result.addAll(extraWords);
       }
     }
 
@@ -186,31 +203,31 @@ class TestSetGenerator {
   }
 
   /// 生成每日推荐牌组
-  /// 
+  ///
   /// [allStates] 所有卡片状态
   /// [allWords] 所有单词
   /// [levels] 目标级别
   /// [maxNewWords] 最大新词数量
-  /// 
+  ///
   /// 返回推荐的单词列表
   List<Word> generateDailyDeck({
     required Map<int, CardState> allStates,
     required List<Word> allWords,
     required Set<String> levels,
     int maxNewWords = 20,
+    LeechPolicy leechPolicy = LeechPolicy.defaultPolicy,
   }) {
     final deckWords = <Word>[];
     final usedIds = <int>{};
+    final wordMap = {for (final w in allWords) w.id: w};
 
     // 1. 添加到期的复习词
     for (final state in allStates.values) {
       if (state.isDue) {
-        final word = allWords.firstWhere(
-          (w) => w.id == state.wordId,
-          orElse: () => allWords.first, // 这不应该发生
-        );
-        
-        if (levels.contains(word.level) && !usedIds.contains(word.id)) {
+        final word = wordMap[state.wordId];
+        if (word != null &&
+            levels.contains(word.level) &&
+            !usedIds.contains(word.id)) {
           deckWords.add(word);
           usedIds.add(word.id);
         }
@@ -219,13 +236,9 @@ class TestSetGenerator {
 
     // 2. 添加不熟词（失忆次数>=2或标记疑难）
     for (final state in allStates.values) {
-      if (state.isLeech && !usedIds.contains(state.wordId)) {
-        final word = allWords.firstWhere(
-          (w) => w.id == state.wordId,
-          orElse: () => allWords.first,
-        );
-        
-        if (levels.contains(word.level)) {
+      if (leechPolicy.isLeech(state) && !usedIds.contains(state.wordId)) {
+        final word = wordMap[state.wordId];
+        if (word != null && levels.contains(word.level)) {
           deckWords.add(word);
           usedIds.add(word.id);
         }
@@ -235,10 +248,12 @@ class TestSetGenerator {
     // 3. 添加新词（未学过的），但限制数量
     final learnedIds = allStates.keys.toSet();
     final newWords = allWords
-        .where((word) => 
-            levels.contains(word.level) && 
-            !learnedIds.contains(word.id) &&
-            !usedIds.contains(word.id))
+        .where(
+          (word) =>
+              levels.contains(word.level) &&
+              !learnedIds.contains(word.id) &&
+              !usedIds.contains(word.id),
+        )
         .toList();
 
     newWords.shuffle(_random);
@@ -248,10 +263,10 @@ class TestSetGenerator {
   }
 
   /// 验证测试集质量
-  /// 
+  ///
   /// [testSet] 测试集
   /// [candidatePool] 候选词池
-  /// 
+  ///
   /// 返回质量评估结果
   Map<String, dynamic> validateTestSetQuality(
     List<Word> testSet,
@@ -283,10 +298,12 @@ class TestSetGenerator {
     double totalDistractorPoolSize = 0;
     for (final word in testSet) {
       final sameLevelSamePos = candidatePool
-          .where((w) => 
-              w.id != word.id &&
-              w.level == word.level &&
-              w.majorPos == word.majorPos)
+          .where(
+            (w) =>
+                w.id != word.id &&
+                w.level == word.level &&
+                w.majorPos == word.majorPos,
+          )
           .length;
       totalDistractorPoolSize += sameLevelSamePos;
     }
@@ -304,10 +321,10 @@ class TestSetGenerator {
   }
 
   /// 重新排序现有测试集
-  /// 
+  ///
   /// [testSet] 原测试集
   /// [orderPolicy] 新的排序策略
-  /// 
+  ///
   /// 返回重排序后的测试集
   List<Word> reorderTestSet(List<Word> testSet, String orderPolicy) {
     switch (orderPolicy) {

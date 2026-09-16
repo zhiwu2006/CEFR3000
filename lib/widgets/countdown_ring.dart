@@ -44,19 +44,15 @@ class _CountdownRingState extends State<CountdownRing>
       duration: const Duration(milliseconds: 200),
       vsync: this,
     );
-    _scaleAnimation = Tween<double>(
-      begin: 1.0,
-      end: 1.1,
-    ).animate(CurvedAnimation(
-      parent: _animationController,
-      curve: Curves.elasticOut,
-    ));
+    _scaleAnimation = Tween<double>(begin: 1.0, end: 1.1).animate(
+      CurvedAnimation(parent: _animationController, curve: Curves.elasticOut),
+    );
   }
 
   @override
   void didUpdateWidget(CountdownRing oldWidget) {
     super.didUpdateWidget(oldWidget);
-    
+
     // 当时间改变时触发缩放动画
     if (oldWidget.remainingTimeMs != widget.remainingTimeMs) {
       _animationController.forward().then((_) {
@@ -73,17 +69,25 @@ class _CountdownRingState extends State<CountdownRing>
 
   @override
   Widget build(BuildContext context) {
-    final progress = widget.totalTimeMs > 0 
+    final progress = widget.totalTimeMs > 0
         ? (widget.remainingTimeMs / widget.totalTimeMs).clamp(0.0, 1.0)
         : 0.0;
-    
+
     final theme = Theme.of(context);
-    final themeStyle = widget.themeStyle ?? 
+    final themeStyle =
+        widget.themeStyle ??
         (widget.isHighContrast ? ThemeStyle.highContrast : ThemeStyle.standard);
-    final progressColor = widget.progressColor ?? 
-        _getProgressColor(progress, themeStyle);
-    final bgColor = widget.backgroundColor ?? 
+    final progressColor =
+        widget.progressColor ?? _getProgressColor(progress, themeStyle);
+    final bgColor =
+        widget.backgroundColor ??
         ThemeManager.getProgressBackgroundColor(themeStyle);
+    final effectiveStrokeWidth =
+        widget.strokeWidth == 6.0 && themeStyle == ThemeStyle.fono
+        ? 2.2
+        : (widget.strokeWidth == 6.0 && themeStyle == ThemeStyle.digitalism
+              ? 4.5
+              : widget.strokeWidth);
 
     return AnimatedBuilder(
       animation: _scaleAnimation,
@@ -102,7 +106,7 @@ class _CountdownRingState extends State<CountdownRing>
                   painter: _CirclePainter(
                     progress: 1.0,
                     color: bgColor,
-                    strokeWidth: widget.strokeWidth,
+                    strokeWidth: effectiveStrokeWidth,
                   ),
                 ),
                 // 进度圆环
@@ -111,10 +115,10 @@ class _CountdownRingState extends State<CountdownRing>
                   painter: _CirclePainter(
                     progress: progress,
                     color: progressColor,
-                    strokeWidth: widget.strokeWidth,
+                    strokeWidth: effectiveStrokeWidth,
                   ),
                 ),
-                // 中间文字
+                // 中心文字
                 if (widget.showText)
                   _buildCenterText(context, theme, progress, themeStyle),
               ],
@@ -125,16 +129,23 @@ class _CountdownRingState extends State<CountdownRing>
     );
   }
 
-  Widget _buildCenterText(BuildContext context, ThemeData theme, double progress, ThemeStyle themeStyle) {
+  Widget _buildCenterText(
+    BuildContext context,
+    ThemeData theme,
+    double progress,
+    ThemeStyle themeStyle,
+  ) {
     final remainingSeconds = (widget.remainingTimeMs / 1000).ceil();
     final isDark = ThemeManager.isDarkTheme(themeStyle);
     final textColor = ThemeManager.getTextColor(themeStyle);
     final warningColor = ThemeManager.getWarningColor(themeStyle);
     final wrongColor = ThemeManager.getWrongColor(themeStyle);
-    
+
     // 文字颜色根据剩余时间调整
     Color finalTextColor;
-    if (isDark) {
+    if (themeStyle == ThemeStyle.fono || themeStyle == ThemeStyle.digitalism) {
+      finalTextColor = textColor;
+    } else if (isDark) {
       finalTextColor = textColor;
     } else {
       if (progress > 0.5) {
@@ -173,7 +184,7 @@ class _CountdownRingState extends State<CountdownRing>
     final correctColor = ThemeManager.getCorrectColor(themeStyle);
     final warningColor = ThemeManager.getWarningColor(themeStyle);
     final wrongColor = ThemeManager.getWrongColor(themeStyle);
-    
+
     if (progress > 0.6) return correctColor;
     if (progress > 0.3) return warningColor;
     return wrongColor;
@@ -202,7 +213,7 @@ class _CirclePainter extends CustomPainter {
 
     final center = Offset(size.width / 2, size.height / 2);
     final radius = (size.width - strokeWidth) / 2;
-    
+
     // 绘制圆弧，从顶部开始（-π/2），顺时针方向
     const startAngle = -math.pi / 2;
     final sweepAngle = 2 * math.pi * progress;
@@ -219,8 +230,8 @@ class _CirclePainter extends CustomPainter {
   @override
   bool shouldRepaint(_CirclePainter oldDelegate) {
     return oldDelegate.progress != progress ||
-           oldDelegate.color != color ||
-           oldDelegate.strokeWidth != strokeWidth;
+        oldDelegate.color != color ||
+        oldDelegate.strokeWidth != strokeWidth;
   }
 }
 
@@ -242,7 +253,7 @@ class SimpleCountdownRing extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final progressColor = color ?? Theme.of(context).colorScheme.primary;
-    
+
     return SizedBox(
       width: size,
       height: size,
@@ -287,23 +298,19 @@ class _PulsingCountdownRingState extends State<PulsingCountdownRing>
       duration: const Duration(milliseconds: 600),
       vsync: this,
     );
-    _pulseAnimation = Tween<double>(
-      begin: 0.8,
-      end: 1.2,
-    ).animate(CurvedAnimation(
-      parent: _pulseController,
-      curve: Curves.easeInOut,
-    ));
+    _pulseAnimation = Tween<double>(begin: 0.8, end: 1.2).animate(
+      CurvedAnimation(parent: _pulseController, curve: Curves.easeInOut),
+    );
   }
 
   @override
   void didUpdateWidget(PulsingCountdownRing oldWidget) {
     super.didUpdateWidget(oldWidget);
-    
-    final progress = widget.totalTimeMs > 0 
+
+    final progress = widget.totalTimeMs > 0
         ? widget.remainingTimeMs / widget.totalTimeMs
         : 0.0;
-    
+
     // 当剩余时间少于30%时开始脉冲
     if (progress < 0.3 && progress > 0) {
       if (!_pulseController.isAnimating) {

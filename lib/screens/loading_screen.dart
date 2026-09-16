@@ -29,7 +29,11 @@ class LoadingScreen extends ConsumerWidget {
     );
   }
 
-  Widget _buildLoadingContent(BuildContext context, ThemeData theme, bool ready) {
+  Widget _buildLoadingContent(
+    BuildContext context,
+    ThemeData theme,
+    bool ready,
+  ) {
     return Center(
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
@@ -49,15 +53,11 @@ class LoadingScreen extends ConsumerWidget {
                 ),
               ],
             ),
-            child: const Icon(
-              Icons.psychology,
-              size: 50,
-              color: Colors.white,
-            ),
+            child: const Icon(Icons.psychology, size: 50, color: Colors.white),
           ),
-          
+
           const SizedBox(height: 32),
-          
+
           // 应用标题
           Text(
             '词汇闪测',
@@ -66,9 +66,9 @@ class LoadingScreen extends ConsumerWidget {
               color: theme.colorScheme.primary,
             ),
           ),
-          
+
           const SizedBox(height: 8),
-          
+
           // 副标题
           Text(
             '2秒闪测 · 不熟回放 · 轻量SRS',
@@ -76,9 +76,9 @@ class LoadingScreen extends ConsumerWidget {
               color: theme.colorScheme.onSurface.withValues(alpha: 0.7),
             ),
           ),
-          
+
           const SizedBox(height: 48),
-          
+
           // 加载指示器
           SizedBox(
             width: 200,
@@ -86,8 +86,12 @@ class LoadingScreen extends ConsumerWidget {
               children: [
                 LinearProgressIndicator(
                   value: ready ? 1.0 : null,
-                  backgroundColor: theme.colorScheme.primary.withValues(alpha: 0.2),
-                  valueColor: AlwaysStoppedAnimation<Color>(theme.colorScheme.primary),
+                  backgroundColor: theme.colorScheme.primary.withValues(
+                    alpha: 0.2,
+                  ),
+                  valueColor: AlwaysStoppedAnimation<Color>(
+                    theme.colorScheme.primary,
+                  ),
                 ),
                 const SizedBox(height: 16),
                 Text(
@@ -104,30 +108,30 @@ class LoadingScreen extends ConsumerWidget {
     );
   }
 
-  Widget _buildErrorContent(BuildContext context, ThemeData theme, Object error) {
+  Widget _buildErrorContent(
+    BuildContext context,
+    ThemeData theme,
+    Object error,
+  ) {
     return Center(
       child: Padding(
         padding: const EdgeInsets.all(32),
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(
-              Icons.error_outline,
-              size: 64,
-              color: theme.colorScheme.error,
-            ),
-            
+            Icon(Icons.error_outline, size: 64, color: theme.colorScheme.error),
+
             const SizedBox(height: 32),
-            
+
             Text(
               '加载失败',
               style: theme.textTheme.headlineMedium?.copyWith(
                 color: theme.colorScheme.error,
               ),
             ),
-            
+
             const SizedBox(height: 16),
-            
+
             Text(
               '请检查应用权限或重新启动应用',
               style: theme.textTheme.bodyMedium?.copyWith(
@@ -135,9 +139,9 @@ class LoadingScreen extends ConsumerWidget {
               ),
               textAlign: TextAlign.center,
             ),
-            
+
             const SizedBox(height: 8),
-            
+
             Text(
               '错误信息：$error',
               style: theme.textTheme.bodySmall?.copyWith(
@@ -145,9 +149,9 @@ class LoadingScreen extends ConsumerWidget {
               ),
               textAlign: TextAlign.center,
             ),
-            
+
             const SizedBox(height: 32),
-            
+
             ElevatedButton(
               onPressed: () {
                 // 重新启动应用

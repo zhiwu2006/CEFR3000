@@ -8,10 +8,10 @@ class DistractorService {
   DistractorService({int? seed}) : _random = Random(seed);
 
   /// 生成题目选项（1个正确答案 + 3个干扰项）
-  /// 
+  ///
   /// [targetWord] 目标单词
   /// [candidatePool] 候选词库（用于生成干扰项）
-  /// 
+  ///
   /// 返回：包含4个选项的列表和正确答案索引
   ({List<String> options, int correctIndex}) buildQuestion(
     Word targetWord,
@@ -42,10 +42,12 @@ class DistractorService {
 
     // 策略1：同级别+同主要词性优先
     final sameLevelSamePos = candidatePool
-        .where((word) =>
-            word.id != targetWord.id &&
-            word.level == targetWord.level &&
-            word.majorPos == targetWord.majorPos)
+        .where(
+          (word) =>
+              word.id != targetWord.id &&
+              word.level == targetWord.level &&
+              word.majorPos == targetWord.majorPos,
+        )
         .toList();
 
     _addDistractorsFromPool(
@@ -54,15 +56,18 @@ class DistractorService {
       correctAnswer,
       targetWord,
       3,
+      targetWord.cnDefs,
     );
 
     // 策略2：如果不足3个，从同级别任意词性补充
     if (distractors.length < 3) {
       final sameLevel = candidatePool
-          .where((word) =>
-              word.id != targetWord.id &&
-              word.level == targetWord.level &&
-              !_isDefinitionUsed(word.primaryDefinition, distractors))
+          .where(
+            (word) =>
+                word.id != targetWord.id &&
+                word.level == targetWord.level &&
+                !_isDefinitionUsed(word.primaryDefinition, distractors),
+          )
           .toList();
 
       _addDistractorsFromPool(
@@ -71,15 +76,18 @@ class DistractorService {
         correctAnswer,
         targetWord,
         3 - distractors.length,
+        targetWord.cnDefs,
       );
     }
 
-    // 策略3：如果仍不足，从其他级别补充
+    // 策略3：如果仍不足，从其他级别补充（跨级别扩展候选池）
     if (distractors.length < 3) {
       final otherWords = candidatePool
-          .where((word) =>
-              word.id != targetWord.id &&
-              !_isDefinitionUsed(word.primaryDefinition, distractors))
+          .where(
+            (word) =>
+                word.id != targetWord.id &&
+                !_isDefinitionUsed(word.primaryDefinition, distractors),
+          )
           .toList();
 
       _addDistractorsFromPool(
@@ -88,23 +96,7 @@ class DistractorService {
         correctAnswer,
         targetWord,
         3 - distractors.length,
-      );
-    }
-
-    // 策略4：如果还是不足，放弃级别限制，从整个候选池中寻找不冲突的单词
-    if (distractors.length < 3) {
-      final allOthers = candidatePool
-          .where((word) =>
-              word.id != targetWord.id &&
-              !_isDefinitionUsed(word.primaryDefinition, distractors))
-          .toList();
-
-      _addDistractorsFromPool(
-        allOthers,
-        distractors,
-        correctAnswer,
-        targetWord,
-        3 - distractors.length,
+        targetWord.cnDefs,
       );
     }
 
@@ -140,6 +132,7 @@ class DistractorService {
     String correctAnswer,
     Word targetWord,
     int needed,
+    List<String> targetAllDefs,
   ) {
     if (pool.isEmpty || needed <= 0) return;
 
@@ -149,14 +142,26 @@ class DistractorService {
     for (final word in shuffledPool) {
       if (distractors.length >= needed) break;
 
+      // 如果候选词的任何一个释义，出现在目标词的释义中，则排除
+      if (word.cnDefs.any((def) => targetAllDefs.contains(def))) {
+        continue;
+      }
+
       final definition = word.primaryDefinition;
 
       // 检查是否与正确答案相同、包含或已使用
       // 增加对正确答案的近义词检测：如果干扰项包含正确答案（或反之），跳过
-      if (definition != correctAnswer &&
-          !definition.contains(correctAnswer) && 
-          !correctAnswer.contains(definition) &&
-          !_isDefinitionUsed(definition, distractors)) {
+      bool hasConflict = false;
+      for (final targetDef in targetAllDefs) {
+        if (definition == targetDef ||
+            definition.contains(targetDef) ||
+            targetDef.contains(definition)) {
+          hasConflict = true;
+          break;
+        }
+      }
+
+      if (!hasConflict && !_isDefinitionUsed(definition, distractors)) {
         distractors.add(definition);
       }
     }
@@ -165,13 +170,13 @@ class DistractorService {
   /// 检查释义是否已被使用或是否存在语义冲突
   bool _isDefinitionUsed(String definition, List<String> usedDefinitions) {
     if (usedDefinitions.contains(definition)) return true;
-    
+
     // 简单的语义冲突检测：防止近义词“撞车”
     // 如果新选项包含已有选项（或反之），视为冲突
     // 例如：Target="建造", Option="建造/建立" -> 冲突
     for (final used in usedDefinitions) {
       if (used.contains(definition) || definition.contains(used)) {
-        return true; 
+        return true;
       }
     }
     return false;
@@ -191,7 +196,7 @@ class DistractorService {
     List<Word> candidatePool,
   ) {
     double score = 0.0;
-    
+
     for (final distractor in distractors) {
       // 查找对应的单词
       final distractorWord = candidatePool.firstWhere(

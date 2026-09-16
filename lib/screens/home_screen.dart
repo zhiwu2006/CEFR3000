@@ -4,25 +4,11 @@ import '../session/base_providers.dart';
 import '../models/models.dart';
 import '../theme/theme_style.dart';
 import '../theme/theme_manager.dart';
+import '../theme/fono_theme.dart';
+import '../theme/digitalism_theme.dart';
 import '../session/session_models.dart';
-
-/// 解析主题风格字符串
-ThemeStyle _parseThemeStyle(String value) {
-  switch (value) {
-    case 'highContrast':
-      return ThemeStyle.highContrast;
-    case 'bauhaus':
-      return ThemeStyle.bauhaus;
-    case 'minimal':
-      return ThemeStyle.minimal;
-    case 'nature':
-      return ThemeStyle.nature;
-    case 'cyberpunk':
-      return ThemeStyle.cyberpunk;
-    default:
-      return ThemeStyle.standard;
-  }
-}
+import 'active_recall_screen.dart';
+import 'production_recall_screen.dart';
 
 /// 主页面 - 支持多主题风格
 class HomeScreen extends ConsumerWidget {
@@ -32,58 +18,72 @@ class HomeScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
     final settings = ref.watch(appSettingsProvider);
-    final themeStyle = _parseThemeStyle(settings.themeStyle);
+    final themeStyle = ThemeStyle.fromString(settings.themeStyle);
     final gradientColors = ThemeManager.getGradientColors(themeStyle);
     final headerTextColor = ThemeManager.getHeaderTextColor(themeStyle);
     final isDark = ThemeManager.isDarkTheme(themeStyle);
 
-    return Scaffold(
-      body: Container(
-        decoration: BoxDecoration(
-          gradient: gradientColors[0] == gradientColors[1]
-              ? null
-              : LinearGradient(
-                  begin: Alignment.topCenter,
-                  end: Alignment.bottomCenter,
-                  colors: gradientColors,
-                ),
-          color: gradientColors[0] == gradientColors[1] ? gradientColors[0] : null,
-        ),
-        child: SafeArea(
-          child: Column(
-            children: [
-              // 自定义应用栏
-              _buildCustomAppBar(context, theme, themeStyle, headerTextColor),
+    final scaffoldBody = Container(
+      decoration: BoxDecoration(
+        gradient: gradientColors[0] == gradientColors[1]
+            ? null
+            : LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                colors: gradientColors,
+              ),
+        color: gradientColors[0] == gradientColors[1]
+            ? gradientColors[0]
+            : null,
+      ),
+      child: SafeArea(
+        child: Column(
+          children: [
+            // 自定义应用栏
+            _buildCustomAppBar(context, theme, themeStyle, headerTextColor),
 
-              // 主要内容
-              Expanded(
-                child: ref
-                    .watch(todayDeckProvider)
-                    .when(
-                      data: (words) => _buildCardGridContent(
-                        context,
-                        theme,
-                        ref,
-                        settings,
-                        words,
-                        themeStyle,
-                      ),
-                      loading: () => Center(
-                        child: CircularProgressIndicator(
-                          valueColor: AlwaysStoppedAnimation<Color>(
-                            isDark ? Colors.white : theme.colorScheme.primary,
-                          ),
+            // 主要内容
+            Expanded(
+              child: ref
+                  .watch(todayDeckProvider)
+                  .when(
+                    data: (words) => _buildCardGridContent(
+                      context,
+                      theme,
+                      ref,
+                      settings,
+                      words,
+                      themeStyle,
+                    ),
+                    loading: () => Center(
+                      child: CircularProgressIndicator(
+                        valueColor: AlwaysStoppedAnimation<Color>(
+                          isDark ? Colors.white : theme.colorScheme.primary,
                         ),
                       ),
-                      error: (error, stack) =>
-                          _buildErrorContent(context, theme, error, themeStyle),
                     ),
-              ),
-            ],
-          ),
+                    error: (error, stack) =>
+                        _buildErrorContent(context, theme, error, themeStyle),
+                  ),
+            ),
+          ],
         ),
       ),
     );
+
+    return Scaffold(
+      body: themeStyle == ThemeStyle.fono
+          ? FonoGridBackground(child: scaffoldBody)
+          : scaffoldBody,
+    );
+  }
+
+  String _formatHeaderDate() {
+    final now = DateTime.now();
+    final y = now.year.toString().padLeft(4, '0');
+    final m = now.month.toString().padLeft(2, '0');
+    final d = now.day.toString().padLeft(2, '0');
+    return '$y/$m/$d';
   }
 
   Widget _buildCustomAppBar(
@@ -92,6 +92,79 @@ class HomeScreen extends ConsumerWidget {
     ThemeStyle themeStyle,
     Color headerTextColor,
   ) {
+    if (themeStyle == ThemeStyle.digitalism) {
+      return Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+        child: Container(
+          decoration: BoxDecoration(
+            color: DigitalismTheme.surface,
+            borderRadius: BorderRadius.circular(DigitalismTheme.buttonRadius),
+            border: Border.all(
+              color: DigitalismTheme.border,
+              width: DigitalismTheme.borderWidth,
+            ),
+            boxShadow: DigitalismTheme.smallShadow,
+          ),
+          child: DigitalismWindowHeader(
+            title: 'CEFR3000 // ${_formatHeaderDate()}',
+            showDivider: false,
+            trailing: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                GestureDetector(
+                  onTap: () => Navigator.of(context).pushNamed('/settings'),
+                  child: Container(
+                    padding: const EdgeInsets.all(4),
+                    child: const Icon(
+                      Icons.settings,
+                      color: DigitalismTheme.textPrimary,
+                      size: 18,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Container(
+                      width: 8,
+                      height: 8,
+                      decoration: const BoxDecoration(
+                        color: DigitalismTheme.textPrimary,
+                        shape: BoxShape.circle,
+                      ),
+                    ),
+                    const SizedBox(width: 4),
+                    Container(
+                      width: 8,
+                      height: 8,
+                      decoration: const BoxDecoration(
+                        color: DigitalismTheme.textPrimary,
+                        shape: BoxShape.circle,
+                      ),
+                    ),
+                    const SizedBox(width: 4),
+                    Container(
+                      width: 8,
+                      height: 8,
+                      decoration: BoxDecoration(
+                        color: Colors.transparent,
+                        shape: BoxShape.circle,
+                        border: Border.all(
+                          color: DigitalismTheme.textPrimary,
+                          width: 1.5,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
+
     final borderRadius = ThemeManager.getBorderRadius(themeStyle);
     final buttonBgColor = headerTextColor.withValues(alpha: 0.2);
 
@@ -180,6 +253,14 @@ class HomeScreen extends ConsumerWidget {
               ),
             ),
 
+            if (themeStyle == ThemeStyle.digitalism) ...[
+              const SizedBox(height: 16),
+              const DigitalismBanner(
+                title: 'MY VOCABULARY RESOLUTIONS',
+                subtitle: 'DAILY RETENTION & SRS PRACTICE',
+              ),
+            ],
+
             const SizedBox(height: 24),
 
             // 欢迎文本
@@ -204,15 +285,107 @@ class HomeScreen extends ConsumerWidget {
 
             const SizedBox(height: 32),
 
-            // 功能卡片网格
+            // 今日计划：计划阶段只读，不会因为打开首页而消耗新词额度。
+            ref
+                .watch(todayStudyPlanProvider)
+                .when(
+                  data: (plan) => _buildTodayPlanBanner(
+                    context,
+                    theme,
+                    ref,
+                    themeStyle,
+                    plan.items.length,
+                    plan.newItemCount,
+                    plan.estimatedSeconds,
+                    plan.wordIds.toList(),
+                  ),
+                  loading: () => const SizedBox.shrink(),
+                  error: (_, __) => const SizedBox.shrink(),
+                ),
+
+            const SizedBox(height: 20),
+
+            // 功能卡片网格 (2x2 黄金矩阵)
             _buildFunctionGrid(context, theme, ref, words, themeStyle),
-
-            const SizedBox(height: 32),
-
-            // 统计信息卡片
-            _buildStatsCards(context, theme, ref, themeStyle),
           ],
         ),
+      ),
+    );
+  }
+
+  Widget _buildTodayPlanBanner(
+    BuildContext context,
+    ThemeData theme,
+    WidgetRef ref,
+    ThemeStyle themeStyle,
+    int itemCount,
+    int newCount,
+    int estimatedSeconds,
+    List<int> wordIds,
+  ) {
+    final textColor = ThemeManager.getTextColor(themeStyle);
+    final secondary = ThemeManager.getSecondaryTextColor(themeStyle);
+    final borderColor = ThemeManager.getBorderColor(themeStyle);
+    final minutes = (estimatedSeconds / 60).ceil();
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        color: ThemeManager.getSurfaceColor(themeStyle),
+        borderRadius: BorderRadius.circular(
+          ThemeManager.getBorderRadius(themeStyle),
+        ),
+        border: Border.all(color: borderColor.withValues(alpha: 0.35)),
+      ),
+      child: Row(
+        children: [
+          Icon(
+            Icons.today_outlined,
+            color: ThemeManager.getCorrectColor(themeStyle),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  '今日学习计划',
+                  style: theme.textTheme.titleMedium?.copyWith(
+                    color: textColor,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  itemCount == 0
+                      ? '今天没有到期任务，可以选择额外练习'
+                      : '$itemCount 个学习项 · $newCount 个新词 · 约 $minutes 分钟',
+                  style: theme.textTheme.bodySmall?.copyWith(color: secondary),
+                ),
+              ],
+            ),
+          ),
+          IconButton(
+            tooltip: '开始今日计划',
+            icon: const Icon(Icons.arrow_forward_ios, size: 16),
+            color: textColor,
+            onPressed: () {
+              final settings = ref.read(appSettingsProvider);
+              Navigator.of(context).pushNamed(
+                '/recall',
+                arguments: ActiveRecallArgs(
+                  config: SessionConfig.fromAppSettings(settings).copyWith(
+                    plannedWordIds: wordIds,
+                    wordsPerSession: wordIds.isEmpty
+                        ? settings.wordsPerSession
+                        : wordIds.length,
+                  ),
+                  wordIds: wordIds,
+                ),
+              );
+            },
+          ),
+        ],
       ),
     );
   }
@@ -234,7 +407,7 @@ class HomeScreen extends ConsumerWidget {
       crossAxisCount: 2,
       crossAxisSpacing: 16,
       mainAxisSpacing: 16,
-      childAspectRatio: 1.1,
+      childAspectRatio: 1.0,
       children: [
         // 开始测试卡片
         _buildFunctionCard(
@@ -260,16 +433,16 @@ class HomeScreen extends ConsumerWidget {
           onTap: () => Navigator.of(context).pushNamed('/leech_words'),
         ),
 
-        // 设置卡片
+        // 看义拼词卡片：从释义主动回想拼写英文单词
         _buildFunctionCard(
           context: context,
           theme: theme,
           themeStyle: themeStyle,
-          title: '设置',
-          subtitle: '个性化配置',
-          icon: Icons.settings,
-          color: theme.colorScheme.secondary,
-          onTap: () => Navigator.of(context).pushNamed('/settings'),
+          title: '看义拼词',
+          subtitle: '从释义写单词',
+          icon: Icons.spellcheck_rounded,
+          color: ThemeManager.getProductionColor(themeStyle),
+          onTap: () => _startProduction(context, ref),
         ),
 
         // 统计卡片
@@ -297,8 +470,14 @@ class HomeScreen extends ConsumerWidget {
     required Color color,
     required VoidCallback onTap,
   }) {
-    final cardDecoration = ThemeManager.getCardDecoration(themeStyle, elevated: true);
-    final iconDecoration = ThemeManager.getIconContainerDecoration(themeStyle, color);
+    final cardDecoration = ThemeManager.getCardDecoration(
+      themeStyle,
+      elevated: true,
+    );
+    final iconDecoration = ThemeManager.getIconContainerDecoration(
+      themeStyle,
+      color,
+    );
     final textColor = ThemeManager.getTextColor(themeStyle);
     final secondaryTextColor = ThemeManager.getSecondaryTextColor(themeStyle);
 
@@ -307,36 +486,42 @@ class HomeScreen extends ConsumerWidget {
       child: Container(
         decoration: cardDecoration,
         child: Padding(
-          padding: const EdgeInsets.all(20),
+          padding: const EdgeInsets.all(16),
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
+            mainAxisSize: MainAxisSize.min,
             children: [
               Container(
-                width: 50,
-                height: 50,
+                width: 44,
+                height: 44,
                 decoration: iconDecoration,
-                child: Icon(icon, color: color, size: 28),
+                child: Icon(icon, color: color, size: 24),
               ),
 
-              const SizedBox(height: 12),
+              const SizedBox(height: 8),
 
               Text(
                 title,
-                style: theme.textTheme.titleMedium?.copyWith(
+                style: theme.textTheme.titleSmall?.copyWith(
                   fontWeight: FontWeight.bold,
                   color: textColor,
                 ),
                 textAlign: TextAlign.center,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
               ),
 
-              const SizedBox(height: 4),
+              const SizedBox(height: 2),
 
               Text(
                 subtitle,
                 style: theme.textTheme.bodySmall?.copyWith(
                   color: secondaryTextColor,
+                  fontSize: 11,
                 ),
                 textAlign: TextAlign.center,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
               ),
             ],
           ),
@@ -345,166 +530,7 @@ class HomeScreen extends ConsumerWidget {
     );
   }
 
-  Widget _buildStatsCards(
-    BuildContext context,
-    ThemeData theme,
-    WidgetRef ref,
-    ThemeStyle themeStyle,
-  ) {
-    final statsAsync = ref.watch(learningStatsProvider);
-    final primaryColor = theme.colorScheme.primary;
-    final correctColor = ThemeManager.getCorrectColor(themeStyle);
-    final wrongColor = ThemeManager.getWrongColor(themeStyle);
-    final warningColor = ThemeManager.getWarningColor(themeStyle);
-    final textColor = ThemeManager.getTextColor(themeStyle);
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          '学习统计',
-          style: theme.textTheme.titleLarge?.copyWith(
-            fontWeight: FontWeight.bold,
-            color: textColor,
-          ),
-        ),
-
-        const SizedBox(height: 16),
-
-        statsAsync.when(
-          data: (stats) => Column(
-            children: [
-              Row(
-                children: [
-                  Expanded(
-                    child: _buildStatCard(
-                      context: context,
-                      theme: theme,
-                      themeStyle: themeStyle,
-                      title: '学习时长', // 原“总测试”
-                      value: stats['totalDurationMinutes'] < 60 
-                          ? '${stats['totalDurationMinutes']}m' 
-                          : '${(stats['totalDurationMinutes'] / 60).toStringAsFixed(1)}h',
-                      icon: Icons.access_time_filled, // 图标改为时间
-                      color: primaryColor,
-                    ),
-                  ),
-
-                  const SizedBox(width: 12),
-
-                  Expanded(
-                    child: _buildStatCard(
-                      context: context,
-                      theme: theme,
-                      themeStyle: themeStyle,
-                      title: '今日准确率',
-                      value: stats['todayTests'] > 0 
-                          ? '${((stats['todayAccuracy'] ?? 0.0) * 100).toInt()}%'
-                          : '-',
-                      icon: Icons.track_changes,
-                      color: correctColor,
-                    ),
-                  ),
-                ],
-              ),
-
-              const SizedBox(height: 12),
-
-              Row(
-                children: [
-                  Expanded(
-                    child: _buildStatCard(
-                      context: context,
-                      theme: theme,
-                      themeStyle: themeStyle,
-                      title: '今日测试',
-                      value: '${stats['todayTests'] ?? 0}次',
-                      icon: Icons.today,
-                      color: warningColor,
-                    ),
-                  ),
-
-                  const SizedBox(width: 12),
-
-                  Expanded(
-                    child: _buildStatCard(
-                      context: context,
-                      theme: theme,
-                      themeStyle: themeStyle,
-                      title: '连续学习',
-                      value: '${stats['streakDays'] ?? 0}天',
-                      icon: Icons.local_fire_department,
-                      color: wrongColor,
-                    ),
-                  ),
-                ],
-              ),
-            ],
-          ),
-          loading: () => const Center(
-            child: Padding(
-              padding: EdgeInsets.all(20),
-              child: CircularProgressIndicator(),
-            ),
-          ),
-          error: (_, __) => Center(
-            child: Text(
-              '统计加载失败',
-              style: TextStyle(color: textColor),
-            ),
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildStatCard({
-    required BuildContext context,
-    required ThemeData theme,
-    required ThemeStyle themeStyle,
-    required String title,
-    required String value,
-    required IconData icon,
-    required Color color,
-  }) {
-    final decoration = ThemeManager.getStatCardDecoration(themeStyle, color);
-    final secondaryTextColor = ThemeManager.getSecondaryTextColor(themeStyle);
-
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: decoration,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Icon(icon, color: color, size: 20),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Text(
-                  title,
-                  style: theme.textTheme.bodySmall?.copyWith(
-                    color: secondaryTextColor,
-                    fontWeight: FontWeight.w500,
-                  ),
-                ),
-              ),
-            ],
-          ),
-
-          const SizedBox(height: 8),
-
-          Text(
-            value,
-            style: theme.textTheme.headlineSmall?.copyWith(
-              color: color,
-              fontWeight: FontWeight.bold,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
 
   Widget _buildErrorContent(
     BuildContext context,
@@ -514,7 +540,7 @@ class HomeScreen extends ConsumerWidget {
   ) {
     final contentDecoration = ThemeManager.getContentAreaDecoration(themeStyle);
     final secondaryTextColor = ThemeManager.getSecondaryTextColor(themeStyle);
-    
+
     return Container(
       margin: const EdgeInsets.only(top: 20),
       decoration: contentDecoration,
@@ -544,26 +570,72 @@ class HomeScreen extends ConsumerWidget {
     );
   }
 
-  void _startTest(BuildContext context, WidgetRef ref) {
-    final settings = ref.read(appSettingsProvider);
-    final delay = settings.delayConfig;
-    final config = SessionConfig(
-      levels: settings.selectedLevelsSet,
-      wordsPerSession: settings.wordsPerSession,
-      timeLimitMs: settings.timeLimitMs,
-      orderPolicy: settings.orderPolicy,
-      onlyLeeches: settings.onlyLeeches,
-      wrongDelay: delay.wrongDelay,
-      slowDelay: delay.slowDelay,
-      slowThreshold: settings.slowThreshold,
-      newCardRatio: settings.newCardRatio,
-      dailyNewLimit: settings.dailyNewLimit,
-      ttsAutoPlay: settings.ttsAutoPlay,
-      ttsOnWrong: settings.ttsOnWrong,
-      leechLapsesThreshold: settings.leechLapsesThreshold,
-      leechIncludeMarked: settings.leechIncludeMarked,
-    );
+  static bool _isNavigating = false;
 
-    Navigator.of(context).pushNamed('/test', arguments: config);
+  void _startTest(BuildContext context, WidgetRef ref) {
+    if (_isNavigating) return;
+    _isNavigating = true;
+    final settings = ref.read(appSettingsProvider);
+    final baseConfig = SessionConfig.fromAppSettings(settings);
+    ref
+        .read(todayRecognitionPlanProvider.future)
+        .then((plan) {
+          _isNavigating = false;
+          if (!context.mounted) return;
+          if (plan.items.isEmpty) {
+            ScaffoldMessenger.of(
+              context,
+            ).showSnackBar(const SnackBar(content: Text('当前范围没有符合条件的识别复习任务')));
+            return;
+          }
+          final config = baseConfig.copyWith(
+            plannedWordIds: plan.items.map((item) => item.wordId).toList(),
+            wordsPerSession: plan.items.length,
+          );
+          Navigator.of(context).pushNamed('/test', arguments: config);
+        })
+        .catchError((error) {
+          _isNavigating = false;
+          if (!context.mounted) return;
+          ScaffoldMessenger.of(
+            context,
+          ).showSnackBar(SnackBar(content: Text('无法生成今日计划：$error')));
+        });
+  }
+
+  void _startProduction(BuildContext context, WidgetRef ref) {
+    if (_isNavigating) return;
+    _isNavigating = true;
+    final settings = ref.read(appSettingsProvider);
+    final baseConfig = SessionConfig.fromAppSettings(settings);
+    ref
+        .read(todayProductionPlanProvider.future)
+        .then((plan) {
+          _isNavigating = false;
+          if (!context.mounted) return;
+          Navigator.of(context).pushNamed(
+            '/production',
+            arguments: ProductionRecallArgs(
+              config: baseConfig.copyWith(
+                plannedWordIds: plan.wordIds.toList(),
+                wordsPerSession: plan.items.isEmpty
+                    ? baseConfig.wordsPerSession
+                    : plan.items.length,
+              ),
+              wordIds: plan.wordIds.toList(),
+            ),
+          );
+        })
+        .catchError((_) {
+          _isNavigating = false;
+          if (!context.mounted) return;
+          Navigator.of(context).pushNamed(
+            '/production',
+            arguments: ProductionRecallArgs(
+              config: baseConfig,
+              wordIds: const [],
+            ),
+          );
+        });
   }
 }

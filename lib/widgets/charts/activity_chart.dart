@@ -160,7 +160,10 @@ class _ActivityChartPainter extends CustomPainter {
       final barGradient = LinearGradient(
         begin: Alignment.bottomCenter,
         end: Alignment.topCenter,
-        colors: [primaryColor.withValues(alpha: 0.3), primaryColor.withValues(alpha: 0.8)],
+        colors: [
+          primaryColor.withValues(alpha: 0.3),
+          primaryColor.withValues(alpha: 0.8),
+        ],
       );
 
       paint.shader = barGradient.createShader(rect.outerRect);

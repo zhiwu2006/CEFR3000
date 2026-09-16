@@ -3,7 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 /// 包豪斯主题 - 几何构成主义风格
-/// 
+///
 /// 设计理念：
 /// - 形式追随功能
 /// - 纯粹几何美学（圆、方、三角）
@@ -32,7 +32,7 @@ class BauhausTheme {
   // ============ 边框与阴影 ============
   static const double borderWidthThin = 2.0;
   static const double borderWidthThick = 4.0;
-  
+
   /// 硬边阴影（包豪斯特色）
   static List<BoxShadow> get hardShadowSmall => [
     const BoxShadow(
@@ -67,7 +67,7 @@ class BauhausTheme {
       useMaterial3: true,
       brightness: Brightness.light,
       scaffoldBackgroundColor: background,
-      
+
       colorScheme: const ColorScheme.light(
         primary: primaryBlue,
         secondary: primaryRed,
@@ -131,9 +131,7 @@ class BauhausTheme {
           backgroundColor: surface,
           padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
           side: const BorderSide(color: foreground, width: borderWidthThin),
-          shape: const RoundedRectangleBorder(
-            borderRadius: BorderRadius.zero,
-          ),
+          shape: const RoundedRectangleBorder(borderRadius: BorderRadius.zero),
           textStyle: GoogleFonts.outfit(
             fontWeight: FontWeight.w700,
             letterSpacing: 1.5,
@@ -156,7 +154,10 @@ class BauhausTheme {
         ),
         filled: true,
         fillColor: surface,
-        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        contentPadding: const EdgeInsets.symmetric(
+          horizontal: 16,
+          vertical: 12,
+        ),
       ),
 
       // 进度指示器
@@ -201,10 +202,10 @@ class BauhausTheme {
           return muted;
         }),
         trackColor: WidgetStateProperty.resolveWith((states) {
-    if (states.contains(WidgetState.selected)) {
-      return primaryRed.withValues(alpha: 0.5);
-    }
-    return foreground.withValues(alpha: 0.2);
+          if (states.contains(WidgetState.selected)) {
+            return primaryRed.withValues(alpha: 0.5);
+          }
+          return foreground.withValues(alpha: 0.2);
         }),
       ),
 
@@ -259,101 +260,103 @@ class BauhausTheme {
   }
 
   static TextTheme _buildTextTheme() {
-    return GoogleFonts.outfitTextTheme(const TextTheme(
-      // 超大标题（单词显示）
-      displayLarge: TextStyle(
-        fontSize: 64,
-        fontWeight: FontWeight.w900,
-        color: foreground,
-        letterSpacing: -2,
-        height: 0.9,
+    return GoogleFonts.outfitTextTheme(
+      const TextTheme(
+        // 超大标题（单词显示）
+        displayLarge: TextStyle(
+          fontSize: 64,
+          fontWeight: FontWeight.w900,
+          color: foreground,
+          letterSpacing: -2,
+          height: 0.9,
+        ),
+        displayMedium: TextStyle(
+          fontSize: 48,
+          fontWeight: FontWeight.w900,
+          color: foreground,
+          letterSpacing: -1,
+          height: 0.9,
+        ),
+        // 大标题
+        headlineLarge: TextStyle(
+          fontSize: 36,
+          fontWeight: FontWeight.w900,
+          color: foreground,
+          letterSpacing: -0.5,
+        ),
+        headlineMedium: TextStyle(
+          fontSize: 28,
+          fontWeight: FontWeight.w700,
+          color: foreground,
+        ),
+        headlineSmall: TextStyle(
+          fontSize: 22,
+          fontWeight: FontWeight.w700,
+          color: foreground,
+        ),
+        // 标题
+        titleLarge: TextStyle(
+          fontSize: 20,
+          fontWeight: FontWeight.w700,
+          color: foreground,
+          letterSpacing: 0.5,
+        ),
+        titleMedium: TextStyle(
+          fontSize: 16,
+          fontWeight: FontWeight.w700,
+          color: foreground,
+          letterSpacing: 0.5,
+        ),
+        titleSmall: TextStyle(
+          fontSize: 14,
+          fontWeight: FontWeight.w700,
+          color: foreground,
+          letterSpacing: 0.5,
+        ),
+        // 正文
+        bodyLarge: TextStyle(
+          fontSize: 18,
+          fontWeight: FontWeight.w500,
+          color: foreground,
+          height: 1.5,
+        ),
+        bodyMedium: TextStyle(
+          fontSize: 16,
+          fontWeight: FontWeight.w500,
+          color: foreground,
+          height: 1.4,
+        ),
+        bodySmall: TextStyle(
+          fontSize: 14,
+          fontWeight: FontWeight.w400,
+          color: Color(0xFF666666),
+          height: 1.3,
+        ),
+        // 标签
+        labelLarge: TextStyle(
+          fontSize: 14,
+          fontWeight: FontWeight.w700,
+          color: foreground,
+          letterSpacing: 1.5,
+        ),
+        labelMedium: TextStyle(
+          fontSize: 12,
+          fontWeight: FontWeight.w700,
+          color: foreground,
+          letterSpacing: 1.5,
+        ),
+        labelSmall: TextStyle(
+          fontSize: 10,
+          fontWeight: FontWeight.w700,
+          color: foreground,
+          letterSpacing: 1.5,
+        ),
       ),
-      displayMedium: TextStyle(
-        fontSize: 48,
-        fontWeight: FontWeight.w900,
-        color: foreground,
-        letterSpacing: -1,
-        height: 0.9,
-      ),
-      // 大标题
-      headlineLarge: TextStyle(
-        fontSize: 36,
-        fontWeight: FontWeight.w900,
-        color: foreground,
-        letterSpacing: -0.5,
-      ),
-      headlineMedium: TextStyle(
-        fontSize: 28,
-        fontWeight: FontWeight.w700,
-        color: foreground,
-      ),
-      headlineSmall: TextStyle(
-        fontSize: 22,
-        fontWeight: FontWeight.w700,
-        color: foreground,
-      ),
-      // 标题
-      titleLarge: TextStyle(
-        fontSize: 20,
-        fontWeight: FontWeight.w700,
-        color: foreground,
-        letterSpacing: 0.5,
-      ),
-      titleMedium: TextStyle(
-        fontSize: 16,
-        fontWeight: FontWeight.w700,
-        color: foreground,
-        letterSpacing: 0.5,
-      ),
-      titleSmall: TextStyle(
-        fontSize: 14,
-        fontWeight: FontWeight.w700,
-        color: foreground,
-        letterSpacing: 0.5,
-      ),
-      // 正文
-      bodyLarge: TextStyle(
-        fontSize: 18,
-        fontWeight: FontWeight.w500,
-        color: foreground,
-        height: 1.5,
-      ),
-      bodyMedium: TextStyle(
-        fontSize: 16,
-        fontWeight: FontWeight.w500,
-        color: foreground,
-        height: 1.4,
-      ),
-      bodySmall: TextStyle(
-        fontSize: 14,
-        fontWeight: FontWeight.w400,
-        color: Color(0xFF666666),
-        height: 1.3,
-      ),
-      // 标签
-      labelLarge: TextStyle(
-        fontSize: 14,
-        fontWeight: FontWeight.w700,
-        color: foreground,
-        letterSpacing: 1.5,
-      ),
-      labelMedium: TextStyle(
-        fontSize: 12,
-        fontWeight: FontWeight.w700,
-        color: foreground,
-        letterSpacing: 1.5,
-      ),
-      labelSmall: TextStyle(
-        fontSize: 10,
-        fontWeight: FontWeight.w700,
-        color: foreground,
-        letterSpacing: 1.5,
-      ),
-    ));
+    );
   }
 
   // ============ 辅助方法 ============
-  
+
   /// 获取按钮装饰（带硬边阴影）
   static BoxDecoration getButtonDecoration({
     Color? backgroundColor,
@@ -376,37 +379,23 @@ class BauhausTheme {
   }
 
   /// 获取几何装饰形状
-  static Widget getGeometricDecoration({
-    required int index,
-    double size = 12,
-  }) {
+  static Widget getGeometricDecoration({required int index, double size = 12}) {
     final colors = [primaryRed, primaryBlue, primaryYellow];
     final color = colors[index % 3];
-    
+
     switch (index % 3) {
       case 0: // 圆形
         return Container(
           width: size,
           height: size,
-          decoration: BoxDecoration(
-            color: color,
-            shape: BoxShape.circle,
-          ),
+          decoration: BoxDecoration(color: color, shape: BoxShape.circle),
         );
       case 1: // 方形
-        return Container(
-          width: size,
-          height: size,
-          color: color,
-        );
+        return Container(width: size, height: size, color: color);
       case 2: // 三角形（旋转的方形）
         return Transform.rotate(
           angle: 0.785398, // 45度
-          child: Container(
-            width: size * 0.7,
-            height: size * 0.7,
-            color: color,
-          ),
+          child: Container(width: size * 0.7, height: size * 0.7, color: color),
         );
       default:
         return const SizedBox.shrink();

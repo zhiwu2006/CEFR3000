@@ -15,8 +15,14 @@ class ThemeUtils {
         return ThemeStyle.nature;
       case 'cyberpunk':
         return ThemeStyle.cyberpunk;
-      default:
+      case 'fono':
+      case 'aeonik':
+      case 'aeonikFono':
+        return ThemeStyle.fono;
+      case 'standard':
         return ThemeStyle.standard;
+      default:
+        return ThemeStyle.digitalism;
     }
   }
 
@@ -35,6 +41,10 @@ class ThemeUtils {
         return 'nature';
       case ThemeStyle.cyberpunk:
         return 'cyberpunk';
+      case ThemeStyle.fono:
+        return 'fono';
+      case ThemeStyle.digitalism:
+        return 'digitalism';
     }
   }
 }

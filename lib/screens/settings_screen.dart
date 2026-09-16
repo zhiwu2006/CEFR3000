@@ -8,6 +8,7 @@ import 'dart:io';
 import 'package:path_provider/path_provider.dart';
 
 import '../session/base_providers.dart';
+
 import '../models/models.dart';
 import '../theme/app_theme.dart';
 import '../theme/theme_style.dart';
@@ -32,6 +33,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   final TextEditingController _apiKeyController = TextEditingController();
   final TextEditingController _aiStudioApiKeyController =
       TextEditingController();
+  bool _isRefreshingModels = false;
 
   @override
   void initState() {
@@ -343,6 +345,9 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     WidgetRef ref,
     AppSettings settings,
   ) {
+    // 尝试获取词量统计以动态判断级别是否有数据
+    final stats = ref.watch(wordStatsProvider).value;
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -351,26 +356,40 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
         Wrap(
           spacing: AppTheme.paddingSmall,
           children: ['A1', 'A2', 'B1', 'B2', 'C1', 'C2'].map((level) {
+            // 如果未能加载出统计数据，默认假设 A1-B2 有数据，C1-C2 没数据
+            final bool isAvailable;
+            if (stats != null) {
+              isAvailable = (stats['level_$level'] ?? 0) > 0;
+            } else {
+              isAvailable = const {'A1', 'A2', 'B1', 'B2'}.contains(level);
+            }
+
             final isSelected = settings.selectedLevelsSet.contains(level);
-            return FilterChip(
-              label: Text(level),
-              selected: isSelected,
-              selectedColor: AppTheme.getLevelBadgeColor(
-                level,
-              ).withValues(alpha: 0.2),
-              onSelected: (selected) {
-                final newLevels = Set<String>.from(settings.selectedLevelsSet);
-                if (selected) {
-                  newLevels.add(level);
-                } else {
-                  newLevels.remove(level);
-                }
-                if (newLevels.isNotEmpty) {
-                  ref
-                      .read(appSettingsProvider.notifier)
-                      .updateSelectedLevels(newLevels);
-                }
-              },
+
+            return Opacity(
+              opacity: isAvailable ? 1.0 : 0.5,
+              child: FilterChip(
+                label: Text(isAvailable ? level : '$level (暫无)'),
+                selected: isSelected,
+                selectedColor: AppTheme.getLevelBadgeColor(
+                  level,
+                ).withValues(alpha: 0.2),
+                onSelected: isAvailable
+                    ? (selected) {
+                        final newLevels = Set<String>.from(settings.selectedLevelsSet);
+                        if (selected) {
+                          newLevels.add(level);
+                        } else {
+                          newLevels.remove(level);
+                        }
+                        if (newLevels.isNotEmpty) {
+                          ref
+                              .read(appSettingsProvider.notifier)
+                              .updateSelectedLevels(newLevels);
+                        }
+                      }
+                    : null,
+              ),
             );
           }).toList(),
         ),
@@ -408,13 +427,15 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     WidgetRef ref,
     AppSettings settings,
   ) {
-    final seconds = settings.timeLimitMs / 1000;
+    // clamp 防止存储值为 0 时 Slider 断言失败
+    final timeLimitMs = settings.timeLimitMs.toDouble().clamp(1500.0, 6000.0);
+    final seconds = timeLimitMs / 1000;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text('时间限制: ${seconds.toStringAsFixed(1)}s'),
         Slider(
-          value: settings.timeLimitMs.toDouble(),
+          value: timeLimitMs,
           min: 1500,
           max: 6000,
           divisions: 9,
@@ -434,16 +455,18 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     WidgetRef ref,
     AppSettings settings,
   ) {
+    // clamp 防止旧存储值（如 5.0）超出 Slider 范围
+    final slowThreshold = settings.slowThreshold.clamp(1.0, 2.5);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text('勉强正确阈值: ${settings.slowThreshold.toStringAsFixed(1)}x'),
+        Text('慢答敏感度: ${slowThreshold.toStringAsFixed(1)}x'),
         Slider(
-          value: settings.slowThreshold,
+          value: slowThreshold,
           min: 1.0,
           max: 2.5,
           divisions: 15,
-          label: '${settings.slowThreshold.toStringAsFixed(1)}x',
+          label: '${slowThreshold.toStringAsFixed(1)}x',
           onChanged: (value) {
             ref.read(appSettingsProvider.notifier).updateSlowThreshold(value);
           },
@@ -580,6 +603,271 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     );
   }
 
+  /// 构建学习模式选择器
+  Widget _buildLearningModeSelector(
+    BuildContext context,
+    WidgetRef ref,
+    AppSettings settings,
+  ) {
+    final theme = Theme.of(context);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            const Text(
+              '学习模式',
+              style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(width: 8),
+            Icon(
+              Icons.info_outline,
+              size: 16,
+              color: theme.colorScheme.onSurface.withValues(alpha: 0.6),
+            ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        Text(
+          '选择适合你当前学习阶段的模式，系统会自动调整相关参数',
+          style: theme.textTheme.bodySmall?.copyWith(
+            color: theme.colorScheme.onSurface.withValues(alpha: 0.6),
+          ),
+        ),
+        const SizedBox(height: 12),
+        ...LearningMode.values.map((mode) {
+          final preset = LearningModePreset.getPreset(mode);
+          final isSelected = settings.learningMode == mode;
+
+          return Card(
+            margin: const EdgeInsets.only(bottom: 8),
+            elevation: isSelected ? 4 : 1,
+            color: isSelected ? theme.colorScheme.primaryContainer : null,
+            child: RadioListTile<LearningMode>(
+              title: Row(
+                children: [
+                  if (preset != null) ...[
+                    Text(preset.icon, style: const TextStyle(fontSize: 20)),
+                    const SizedBox(width: 8),
+                  ],
+                  Expanded(
+                    child: Text(
+                      preset?.name ?? '自定义模式',
+                      style: TextStyle(
+                        fontWeight: isSelected
+                            ? FontWeight.bold
+                            : FontWeight.normal,
+                      ),
+                    ),
+                  ),
+                  if (mode == LearningMode.balanced)
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 6,
+                        vertical: 2,
+                      ),
+                      decoration: BoxDecoration(
+                        color: theme.colorScheme.primary,
+                        borderRadius: BorderRadius.circular(4),
+                      ),
+                      child: Text(
+                        '推荐',
+                        style: TextStyle(
+                          color: theme.colorScheme.onPrimary,
+                          fontSize: 10,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+              subtitle: preset != null
+                  ? Text(
+                      '${preset.description}\n'
+                      '每轮: ${preset.wordsPerSession}词 | '
+                      '新词: ${preset.dailyNewWords}个/天 (上限: ${preset.dailyNewLimit}) | '
+                      '时间: ${preset.timeLimitMs}ms',
+                      style: theme.textTheme.bodySmall,
+                    )
+                  : const Text('手动调整所有参数'),
+              value: mode,
+              groupValue: settings.learningMode,
+              onChanged: (value) {
+                if (value != null) {
+                  _applyLearningMode(context, ref, value);
+                }
+              },
+            ),
+          );
+        }),
+      ],
+    );
+  }
+
+  /// 应用学习模式预设
+  Future<void> _applyLearningMode(
+    BuildContext context,
+    WidgetRef ref,
+    LearningMode mode,
+  ) async {
+    if (mode == LearningMode.custom) {
+      // 自定义模式，只更新模式标识，不改变参数
+      await ref.read(appSettingsProvider.notifier).updateLearningMode(mode);
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('已切换到自定义模式'),
+            duration: Duration(seconds: 2),
+          ),
+        );
+      }
+      return;
+    }
+
+    final preset = LearningModePreset.getPreset(mode);
+    if (preset == null) return;
+
+    final currentSettings = ref.read(appSettingsProvider);
+    final hasChanges =
+        currentSettings.wordsPerSession != preset.wordsPerSession ||
+        currentSettings.newCardRatio != preset.newCardRatio ||
+        currentSettings.dailyNewLimit != preset.dailyNewLimit ||
+        currentSettings.timeLimitMs != preset.timeLimitMs;
+
+    if (!hasChanges) {
+      // 参数没有变化，只更新模式标识
+      await ref.read(appSettingsProvider.notifier).updateLearningMode(mode);
+      return;
+    }
+
+    // 显示确认对话框
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Row(
+          children: [
+            Text(preset.icon, style: const TextStyle(fontSize: 24)),
+            const SizedBox(width: 8),
+            Text('切换到${preset.name}'),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('这将更新以下设置：', style: Theme.of(context).textTheme.bodyMedium),
+            const SizedBox(height: 12),
+            _buildParameterChangeRow(
+              context,
+              '每轮词数',
+              '${currentSettings.wordsPerSession}',
+              '${preset.wordsPerSession}',
+            ),
+            _buildParameterChangeRow(
+              context,
+              '新卡比例',
+              '${(currentSettings.newCardRatio * 100).toInt()}%',
+              '${(preset.newCardRatio * 100).toInt()}%',
+            ),
+            _buildParameterChangeRow(
+              context,
+              '每日新卡上限',
+              '${currentSettings.dailyNewLimit}',
+              '${preset.dailyNewLimit}',
+            ),
+            _buildParameterChangeRow(
+              context,
+              '时间限制',
+              '${currentSettings.timeLimitMs}ms',
+              '${preset.timeLimitMs}ms',
+            ),
+            const SizedBox(height: 12),
+            Text(
+              preset.description,
+              style: Theme.of(
+                context,
+              ).textTheme.bodySmall?.copyWith(fontStyle: FontStyle.italic),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('取消'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('确认切换'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed == true && context.mounted) {
+      await ref.read(appSettingsProvider.notifier).applyPreset(mode);
+
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Row(
+              children: [
+                Text(preset.icon, style: const TextStyle(fontSize: 20)),
+                const SizedBox(width: 8),
+                Text('已切换到${preset.name}'),
+              ],
+            ),
+            duration: const Duration(seconds: 2),
+          ),
+        );
+      }
+    }
+  }
+
+  /// 构建参数变更行（用于确认对话框）
+  Widget _buildParameterChangeRow(
+    BuildContext context,
+    String label,
+    String oldValue,
+    String newValue,
+  ) {
+    final theme = Theme.of(context);
+    final isChanged = oldValue != newValue;
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: Row(
+        children: [
+          SizedBox(
+            width: 100,
+            child: Text(label, style: theme.textTheme.bodySmall),
+          ),
+          Expanded(
+            child: Row(
+              children: [
+                if (isChanged)
+                  Text(
+                    oldValue,
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      decoration: TextDecoration.lineThrough,
+                      color: theme.colorScheme.error,
+                    ),
+                  ),
+                if (isChanged) const SizedBox(width: 8),
+                Text(
+                  newValue,
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    fontWeight: isChanged ? FontWeight.bold : null,
+                    color: isChanged ? theme.colorScheme.primary : null,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildLeechWordsPerSessionSlider(
     BuildContext context,
     WidgetRef ref,
@@ -653,13 +941,17 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     AppSettings settings,
   ) {
     const locales = {'en-US': '美式英语', 'en-GB': '英式英语'};
+    // fallback: 如果存储值不在列表中，默认用 en-US
+    final ttsLocale = locales.containsKey(settings.ttsLocale)
+        ? settings.ttsLocale
+        : 'en-US';
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         const Text('语音语言'),
         DropdownButton<String>(
-          value: settings.ttsLocale,
+          value: ttsLocale,
           isExpanded: true,
           items: locales.entries.map((entry) {
             return DropdownMenuItem(value: entry.key, child: Text(entry.value));
@@ -760,114 +1052,118 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     );
   }
 
-  Widget _buildOpenRouterApiKeyField(
+  Future<void> _handleRefreshModels(
     BuildContext context,
     WidgetRef ref,
-    AppSettings settings,
-  ) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        const Text('OpenRouter API Key'),
-        const SizedBox(height: 8),
-        TextField(
-          controller: _apiKeyController,
-          obscureText: true,
-          decoration: const InputDecoration(
-            hintText: 'sk-or-v1-...',
-            border: OutlineInputBorder(),
-            isDense: true,
-            contentPadding: EdgeInsets.all(12),
-          ),
-          onChanged: (value) {
-            ref
-                .read(appSettingsProvider.notifier)
-                .updateOpenRouterSettings(apiKey: value);
-          },
-        ),
-      ],
-    );
-  }
+    bool isAiStudio,
+  ) async {
+    if (_isRefreshingModels) return;
 
-  Widget _buildOpenRouterModelSelector(
-    BuildContext context,
-    WidgetRef ref,
-    AppSettings settings,
-  ) {
-    final modelsAsync = ref.watch(openRouterFreeModelsProvider);
+    final controller =
+        isAiStudio ? _aiStudioApiKeyController : _apiKeyController;
+    final currentKey = controller.text.trim();
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        const Text('默认模型'),
-        const SizedBox(height: 8),
-        modelsAsync.when(
-          data: (models) {
-            var validModels = models.toList();
-            // 确保当前选中值在列表中
-            if (settings.openRouterDefaultModel.isNotEmpty &&
-                !validModels.any(
-                  (m) => m.id == settings.openRouterDefaultModel,
-                )) {
-              // 如果当前值不在列表中，添加一个占位项
-              validModels = [
-                OpenRouterModel(
-                  id: settings.openRouterDefaultModel,
-                  name: settings.openRouterDefaultModel,
-                  promptPrice: '?',
-                  completionPrice: '?',
-                ),
-                ...validModels,
-              ];
-            }
+    // 1. 同步当前输入框的 API Key
+    if (isAiStudio) {
+      await ref
+          .read(appSettingsProvider.notifier)
+          .updateAiStudioSettings(apiKey: currentKey);
+    } else {
+      await ref
+          .read(appSettingsProvider.notifier)
+          .updateOpenRouterSettings(apiKey: currentKey);
+    }
 
-            if (validModels.isEmpty) {
-              return const Text('无可用模型');
-            }
+    setState(() {
+      _isRefreshingModels = true;
+    });
 
-            return DropdownButtonFormField<String>(
-              value: settings.openRouterDefaultModel,
-              isExpanded: true,
-              decoration: const InputDecoration(
-                border: OutlineInputBorder(),
-                isDense: true,
-                contentPadding: EdgeInsets.symmetric(
-                  horizontal: 12,
-                  vertical: 12,
-                ),
-              ),
-              items: validModels.map((model) {
-                return DropdownMenuItem(
-                  value: model.id,
-                  child: Text(model.id, overflow: TextOverflow.ellipsis),
+    try {
+      if (isAiStudio) {
+        final models = await ref.refresh(aiStudioModelsProvider.future);
+        final validModels = models.where((m) => m.isFreeTier).toList();
+        final currentSettings = ref.read(appSettingsProvider);
+
+        if (validModels.isNotEmpty) {
+          final found = validModels.any(
+            (m) => m.name == currentSettings.aiStudioDefaultModel,
+          );
+          if (!found) {
+            final firstModel = validModels.first.name;
+            await ref.read(appSettingsProvider.notifier).updateAiStudioSettings(
+                  defaultModel: firstModel,
                 );
-              }).toList(),
-              onChanged: (value) {
-                if (value != null) {
-                  ref
-                      .read(appSettingsProvider.notifier)
-                      .updateOpenRouterSettings(defaultModel: value);
-                }
-              },
-            );
-          },
-          loading: () => const Center(
-            child: Padding(
-              padding: EdgeInsets.all(8.0),
-              child: SizedBox(
-                width: 24,
-                height: 24,
-                child: CircularProgressIndicator(strokeWidth: 2),
+            if (currentSettings.aiProvider == 'aistudio') {
+              await ref.read(appSettingsProvider.notifier).updateAiProvider(
+                    provider: 'aistudio',
+                    defaultModel: firstModel,
+                  );
+            }
+          }
+        }
+
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                '已刷新 Google AI Studio 免费层模型（共 ${validModels.length} 个）',
               ),
+              duration: const Duration(seconds: 2),
             ),
+          );
+        }
+      } else {
+        final models = await ref.refresh(openRouterFreeModelsProvider.future);
+        final validModels = models.where((m) => m.isFree).toList();
+        final currentSettings = ref.read(appSettingsProvider);
+
+        if (validModels.isNotEmpty) {
+          final found = validModels.any(
+            (m) => m.id == currentSettings.openRouterDefaultModel,
+          );
+          if (!found) {
+            final firstModel = validModels.first.id;
+            await ref
+                .read(appSettingsProvider.notifier)
+                .updateOpenRouterSettings(
+                  defaultModel: firstModel,
+                );
+            if (currentSettings.aiProvider == 'openrouter') {
+              await ref.read(appSettingsProvider.notifier).updateAiProvider(
+                    provider: 'openrouter',
+                    defaultModel: firstModel,
+                  );
+            }
+          }
+        }
+
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                '已刷新 OpenRouter Free 模型（共 ${validModels.length} 个）',
+              ),
+              duration: const Duration(seconds: 2),
+            ),
+          );
+        }
+      }
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('刷新失败，已使用预置免费模型: $e'),
+            duration: const Duration(seconds: 2),
           ),
-          error: (err, stack) => Text(
-            '加载失败',
-            style: TextStyle(color: Theme.of(context).colorScheme.error),
-          ),
-        ),
-      ],
-    );
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isRefreshingModels = false;
+        });
+      }
+    }
   }
 
   Widget _buildAiSettingsSection(
@@ -875,48 +1171,105 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     WidgetRef ref,
     AppSettings settings,
   ) {
-    return _buildSection(context, 'OpenRouter 设置', [
-      _buildOpenRouterApiKeyField(context, ref, settings),
+    final isAiStudio = settings.aiProvider == 'aistudio';
+    final apiKeyController = isAiStudio
+        ? _aiStudioApiKeyController
+        : _apiKeyController;
+
+    return _buildSection(context, 'AI 设置', [
+      Column(
+        children: [
+          RadioListTile<String>(
+            title: const Text('OpenRouter'),
+            value: 'openrouter',
+            groupValue: settings.aiProvider,
+            onChanged: (value) {
+              if (value != null) {
+                ref
+                    .read(appSettingsProvider.notifier)
+                    .updateAiProvider(provider: value);
+              }
+            },
+          ),
+          RadioListTile<String>(
+            title: const Text('Google AI Studio'),
+            value: 'aistudio',
+            groupValue: settings.aiProvider,
+            onChanged: (value) {
+              if (value != null) {
+                ref
+                    .read(appSettingsProvider.notifier)
+                    .updateAiProvider(provider: value);
+              }
+            },
+          ),
+        ],
+      ),
       const SizedBox(height: 16),
-      _buildOpenRouterModelSelector(context, ref, settings),
+      Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(isAiStudio ? 'AI Studio API Key' : 'OpenRouter API Key'),
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              Expanded(
+                child: TextField(
+                  controller: apiKeyController,
+                  obscureText: true,
+                  decoration: InputDecoration(
+                    hintText: isAiStudio ? 'AI Studio API Key' : 'sk-or-v1-...',
+                    border: const OutlineInputBorder(),
+                    isDense: true,
+                    contentPadding: const EdgeInsets.all(12),
+                  ),
+                  onChanged: (value) {
+                    if (isAiStudio) {
+                      ref
+                          .read(appSettingsProvider.notifier)
+                          .updateAiStudioSettings(apiKey: value);
+                    } else {
+                      ref
+                          .read(appSettingsProvider.notifier)
+                          .updateOpenRouterSettings(apiKey: value);
+                    }
+                  },
+                ),
+              ),
+              const SizedBox(width: 8),
+              IconButton.filledTonal(
+                tooltip: '刷新模型列表',
+                icon: _isRefreshingModels
+                    ? const SizedBox(
+                        width: 20,
+                        height: 20,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Icons.refresh),
+                onPressed: _isRefreshingModels
+                    ? null
+                    : () => _handleRefreshModels(context, ref, isAiStudio),
+              ),
+            ],
+          ),
+        ],
+      ),
+      const SizedBox(height: 16),
+      _buildUnifiedModelSelector(context, ref, settings),
     ]);
   }
 
-  Widget _buildAiStudioApiKeyField(
+  Widget _buildUnifiedModelSelector(
     BuildContext context,
     WidgetRef ref,
     AppSettings settings,
   ) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        const Text('AI Studio API Key'),
-        const SizedBox(height: 8),
-        TextField(
-          controller: _aiStudioApiKeyController,
-          obscureText: true,
-          decoration: const InputDecoration(
-            hintText: 'AI Studio API Key',
-            border: OutlineInputBorder(),
-            isDense: true,
-            contentPadding: EdgeInsets.all(12),
-          ),
-          onChanged: (value) {
-            ref
-                .read(appSettingsProvider.notifier)
-                .updateAiStudioSettings(apiKey: value);
-          },
-        ),
-      ],
-    );
-  }
-
-  Widget _buildAiStudioModelSelector(
-    BuildContext context,
-    WidgetRef ref,
-    AppSettings settings,
-  ) {
-    final modelsAsync = ref.watch(aiStudioModelsProvider);
+    final isAiStudio = settings.aiProvider == 'aistudio';
+    final benchmarkState = ref.watch(aiBenchmarkProvider);
+    final modelsAsync = isAiStudio
+        ? ref.watch(aiStudioModelsProvider)
+        // convert to general async value type to match if possible, or handle separately
+        : ref.watch(openRouterFreeModelsProvider);
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -924,30 +1277,63 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
         const Text('默认模型'),
         const SizedBox(height: 8),
         modelsAsync.when(
-          data: (models) {
+          data: (modelsRaw) {
+            // Normalize models to a common interface for the dropdown
+            final models = modelsRaw as List<dynamic>;
             var validModels = models.toList();
-            // 确保当前选中值在列表中
-            if (settings.aiStudioDefaultModel.isNotEmpty &&
-                !validModels.any(
-                  (m) => m.name == settings.aiStudioDefaultModel,
-                )) {
-              // 如果当前值不在列表中，添加一个占位项
-              validModels = [
-                AiStudioModel(
-                  name: settings.aiStudioDefaultModel,
-                  displayName: settings.aiStudioDefaultModel,
-                  supportedGenerationMethods: ['generateContent'],
-                ),
-                ...validModels,
-              ];
-            }
+            var currentId = settings.aiDefaultModel;
 
             if (validModels.isEmpty) {
               return const Text('无可用模型');
             }
 
+            // Ensure current selected value is in list
+            bool found = false;
+            if (isAiStudio) {
+              found = validModels.any(
+                (m) => (m as AiStudioModel).name == currentId,
+              );
+            } else {
+              found = validModels.any(
+                (m) => (m as OpenRouterModel).id == currentId,
+              );
+            }
+
+            if (!found) {
+              if (currentId.isNotEmpty) {
+                // 存储的模型不在列表中，插入一个占位项
+                if (isAiStudio) {
+                  validModels.insert(
+                    0,
+                    AiStudioModel(
+                      name: currentId,
+                      displayName: currentId,
+                      supportedGenerationMethods: ['generateContent'],
+                    ),
+                  );
+                } else {
+                  validModels.insert(
+                    0,
+                    OpenRouterModel(
+                      id: currentId,
+                      name: currentId,
+                      promptPrice: '?',
+                      completionPrice: '?',
+                    ),
+                  );
+                }
+              } else {
+                // currentId 为空，fallback 到列表第一个模型
+                if (isAiStudio) {
+                  currentId = (validModels.first as AiStudioModel).name;
+                } else {
+                  currentId = (validModels.first as OpenRouterModel).id;
+                }
+              }
+            }
+
             return DropdownButtonFormField<String>(
-              value: settings.aiStudioDefaultModel,
+              value: currentId,
               isExpanded: true,
               decoration: const InputDecoration(
                 border: OutlineInputBorder(),
@@ -957,17 +1343,92 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                   vertical: 12,
                 ),
               ),
+              onTap: () {
+                if (isAiStudio) {
+                  ref
+                      .read(aiBenchmarkProvider.notifier)
+                      .benchmarkAiStudio(
+                        models: validModels.cast<AiStudioModel>(),
+                        apiKey: settings.aiStudioApiKey,
+                      );
+                } else {
+                  ref
+                      .read(aiBenchmarkProvider.notifier)
+                      .benchmarkOpenRouter(
+                        models: validModels.cast<OpenRouterModel>(),
+                        apiKey: settings.openRouterApiKey,
+                      );
+                }
+              },
               items: validModels.map((model) {
+                String id;
+                String displayName;
+                if (isAiStudio) {
+                  final m = model as AiStudioModel;
+                  id = m.name;
+                  displayName = m.name;
+                } else {
+                  final m = model as OpenRouterModel;
+                  id = m.id;
+                  displayName = m.id;
+                }
+
+                String statusSuffix = '';
+                if (isAiStudio) {
+                  final result = benchmarkState.aiStudio[id];
+                  if (result != null) {
+                    if (result.latencyMs != null) {
+                      statusSuffix = ' • ${result.latencyMs}ms';
+                    } else if (result.error == 'missing_api_key') {
+                      statusSuffix = ' • no key';
+                    } else {
+                      statusSuffix = ' • failed';
+                    }
+                  } else if (benchmarkState.runningAiStudio) {
+                    statusSuffix = ' • testing';
+                  }
+                } else {
+                  final result = benchmarkState.openRouter[id];
+                  if (result != null) {
+                    if (result.latencyMs != null) {
+                      statusSuffix = ' • ${result.latencyMs}ms';
+                    } else if (result.error == 'missing_api_key') {
+                      statusSuffix = ' • no key';
+                    } else {
+                      statusSuffix = ' • failed';
+                    }
+                  } else if (benchmarkState.runningOpenRouter) {
+                    statusSuffix = ' • testing';
+                  }
+                }
+
                 return DropdownMenuItem(
-                  value: model.name,
-                  child: Text(model.name, overflow: TextOverflow.ellipsis),
+                  value: id,
+                  child: Text(
+                    '$displayName$statusSuffix',
+                    overflow: TextOverflow.ellipsis,
+                  ),
                 );
               }).toList(),
               onChanged: (value) {
                 if (value != null) {
+                  if (isAiStudio) {
+                    ref
+                        .read(appSettingsProvider.notifier)
+                        .updateAiStudioSettings(defaultModel: value);
+                  } else {
+                    ref
+                        .read(appSettingsProvider.notifier)
+                        .updateOpenRouterSettings(defaultModel: value);
+                  }
+                  // Global update is handled by the specific update methods in AppSettingsNotifier
+                  // when the provider matches.
                   ref
                       .read(appSettingsProvider.notifier)
-                      .updateAiStudioSettings(defaultModel: value);
+                      .updateAiProvider(
+                        provider: settings.aiProvider,
+                        defaultModel: value,
+                      );
                 }
               },
             );
@@ -989,18 +1450,6 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
         ),
       ],
     );
-  }
-
-  Widget _buildAiStudioSettingsSection(
-    BuildContext context,
-    WidgetRef ref,
-    AppSettings settings,
-  ) {
-    return _buildSection(context, 'AI Studio 设置', [
-      _buildAiStudioApiKeyField(context, ref, settings),
-      const SizedBox(height: 16),
-      _buildAiStudioModelSelector(context, ref, settings),
-    ]);
   }
 
   Widget _buildSrsAlphaSlider(
@@ -1275,6 +1724,18 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
           const Color(0xFF00FF88),
           const Color(0xFFFF00FF),
         ];
+      case ThemeStyle.fono:
+        return [
+          const Color(0xFFEBF0E4),
+          const Color(0xFF181B18),
+          const Color(0xFF22512A),
+        ];
+      case ThemeStyle.digitalism:
+        return [
+          DigitalismTheme.background,
+          DigitalismTheme.surface,
+          DigitalismTheme.accentPeach,
+        ];
     }
   }
 
@@ -1283,14 +1744,19 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     WidgetRef ref,
     AppSettings settings,
   ) {
-    const locales = {'zh-CN': '简体中文', 'zh-TW': '繁体中文', 'en-US': 'English'};
+    // key 使用下划线格式，与 Hive 存储中的默认值 'zh_CN' 一致
+    const locales = {'zh_CN': '简体中文', 'zh_TW': '繁体中文', 'en_US': 'English'};
+    // fallback: 如果存储值不在列表中，默认用 zh_CN
+    final uiLocale = locales.containsKey(settings.uiLocale)
+        ? settings.uiLocale
+        : 'zh_CN';
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         const Text('界面语言'),
         DropdownButton<String>(
-          value: settings.uiLocale,
+          value: uiLocale,
           isExpanded: true,
           items: locales.entries.map((entry) {
             return DropdownMenuItem(value: entry.key, child: Text(entry.value));
@@ -1637,6 +2103,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
 
         // 测试配置
         _buildSection(context, '测试配置', [
+          _buildLearningModeSelector(context, ref, settings),
+          const Divider(height: 24),
           _buildLevelSelector(context, ref, settings),
           _buildWordsPerSessionSlider(context, ref, settings),
           _buildTimeLimitSlider(context, ref, settings),
@@ -1687,13 +2155,6 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
 
         // AI 设置
         _buildAiSettingsSection(context, ref, settings),
-
-        SizedBox(
-          height: AppTheme.getResponsivePadding(context, AppTheme.paddingLarge),
-        ),
-
-        // AI Studio 设置
-        _buildAiStudioSettingsSection(context, ref, settings),
 
         SizedBox(
           height: AppTheme.getResponsivePadding(context, AppTheme.paddingLarge),
@@ -1752,6 +2213,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
 
             // 第一列：测试配置和TTS配置
             _buildSection(context, '测试配置', [
+              _buildLearningModeSelector(context, ref, settings),
+              const Divider(height: 24),
               _buildLevelSelector(context, ref, settings),
               _buildWordsPerSessionSlider(context, ref, settings),
               _buildTimeLimitSlider(context, ref, settings),
@@ -1786,16 +2249,6 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
 
             // AI 设置
             _buildAiSettingsSection(context, ref, settings),
-
-            SizedBox(
-              height: AppTheme.getResponsivePadding(
-                context,
-                AppTheme.paddingLarge,
-              ),
-            ),
-
-            // AI Studio 设置
-            _buildAiStudioSettingsSection(context, ref, settings),
           ],
         ),
         right: Column(

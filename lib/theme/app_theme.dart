@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../utils/responsive_layout.dart';
+export 'fono_theme.dart';
+export 'digitalism_theme.dart';
 
 /// 应用主题配置
 class AppTheme {
@@ -203,13 +205,13 @@ class AppTheme {
       }
     } else {
       if (isSelected && isCorrect) {
-    backgroundColor = correctColor.withValues(alpha: 0.2);
+        backgroundColor = correctColor.withValues(alpha: 0.2);
         borderColor = correctColor;
       } else if (isSelected && isWrong) {
-    backgroundColor = wrongColor.withValues(alpha: 0.2);
+        backgroundColor = wrongColor.withValues(alpha: 0.2);
         borderColor = wrongColor;
       } else if (isCorrect) {
-    backgroundColor = correctColor.withValues(alpha: 0.1);
+        backgroundColor = correctColor.withValues(alpha: 0.1);
         borderColor = correctColor;
       } else {
         backgroundColor = surfaceColor;
@@ -311,7 +313,7 @@ class AppTheme {
   /// 阴影
   static List<BoxShadow> get cardShadow => [
     BoxShadow(
-        color: Colors.black.withValues(alpha: 0.1),
+      color: Colors.black.withValues(alpha: 0.1),
       blurRadius: 8,
       offset: const Offset(0, 2),
     ),
@@ -319,7 +321,7 @@ class AppTheme {
 
   static List<BoxShadow> get buttonShadow => [
     BoxShadow(
-        color: Colors.black.withValues(alpha: 0.15),
+      color: Colors.black.withValues(alpha: 0.15),
       blurRadius: 4,
       offset: const Offset(0, 2),
     ),

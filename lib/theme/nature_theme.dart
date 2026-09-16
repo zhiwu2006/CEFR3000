@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 /// 自然主题 - 森林绿意风格
-/// 
+///
 /// 设计理念：
 /// - 自然色调，护眼舒适
 /// - 有机形态，柔和曲线
@@ -34,7 +34,7 @@ class NatureTheme {
       useMaterial3: true,
       brightness: Brightness.light,
       scaffoldBackgroundColor: background,
-      
+
       colorScheme: const ColorScheme.light(
         primary: primaryGreen,
         secondary: secondaryGreen,
@@ -67,9 +67,7 @@ class NatureTheme {
         color: surface,
         elevation: 2,
         shadowColor: accentBrown.withValues(alpha: 0.15),
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(16),
-        ),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       ),
 
@@ -79,15 +77,12 @@ class NatureTheme {
           backgroundColor: primaryGreen,
           foregroundColor: Colors.white,
           elevation: 2,
-        shadowColor: primaryGreen.withValues(alpha: 0.3),
+          shadowColor: primaryGreen.withValues(alpha: 0.3),
           padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 14),
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(24),
           ),
-          textStyle: const TextStyle(
-            fontSize: 16,
-            fontWeight: FontWeight.w600,
-          ),
+          textStyle: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
         ),
       ),
 
@@ -99,10 +94,7 @@ class NatureTheme {
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(24),
           ),
-          textStyle: const TextStyle(
-            fontSize: 16,
-            fontWeight: FontWeight.w600,
-          ),
+          textStyle: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
         ),
       ),
 
@@ -121,7 +113,10 @@ class NatureTheme {
         ),
         filled: true,
         fillColor: surface,
-        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        contentPadding: const EdgeInsets.symmetric(
+          horizontal: 16,
+          vertical: 14,
+        ),
       ),
 
       // 进度指示器
@@ -198,9 +193,7 @@ class NatureTheme {
       // Dialog
       dialogTheme: DialogThemeData(
         backgroundColor: surface,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(20),
-        ),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
         titleTextStyle: const TextStyle(
           fontSize: 20,
           fontWeight: FontWeight.w600,
@@ -305,7 +298,7 @@ class NatureTheme {
   }
 
   // ============ 辅助方法 ============
-  
+
   static Color getLevelBadgeColor(String level) {
     switch (level) {
       case 'A1':

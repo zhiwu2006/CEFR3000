@@ -18,14 +18,18 @@ abstract class WordRepository {
   Future<List<Word>> getByLevelAndPos(String level, String pos);
 
   /// 获取同级别同词性的单词（用于干扰项生成）
-  Future<List<Word>> getSameLevelSamePos(String level, String pos, {int? excludeId});
+  Future<List<Word>> getSameLevelSamePos(
+    String level,
+    String pos, {
+    int? excludeId,
+  });
 
   /// 搜索单词
   Future<List<Word>> search(String query);
 
   /// 获取词汇统计信息
   Future<Map<String, int>> getStatistics();
-  
+
   /// 强制重新加载词汇数据（清除缓存并重新从assets加载）
   Future<void> forceReload();
 }

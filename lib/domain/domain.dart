@@ -2,3 +2,13 @@
 export 'distractor.dart';
 export 'srs.dart';
 export 'testset.dart';
+export '../features/memory/domain/memory_scheduler.dart';
+export '../features/memory/domain/fsrs_scheduler.dart';
+export '../features/memory/domain/memory_state.dart';
+export '../features/memory/domain/learning_item_state.dart';
+export '../features/memory/domain/leech_intervention.dart';
+export '../features/memory/domain/recall_models.dart';
+export '../features/lexicon/domain/lexicon_models.dart';
+export '../features/lexicon/domain/content_eligibility.dart';
+export '../features/study/domain/study_plan.dart';
+export '../features/progress/domain/memory_analytics.dart';

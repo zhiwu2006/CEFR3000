@@ -23,6 +23,10 @@ class ThemeManager {
         return NatureTheme.getTheme(context);
       case ThemeStyle.cyberpunk:
         return CyberpunkTheme.getTheme(context);
+      case ThemeStyle.fono:
+        return FonoTheme.getTheme(context);
+      case ThemeStyle.digitalism:
+        return DigitalismTheme.getTheme(context);
     }
   }
 
@@ -32,7 +36,10 @@ class ThemeManager {
       case ThemeStyle.standard:
         return [AppTheme.gradientStart, AppTheme.gradientEnd];
       case ThemeStyle.highContrast:
-        return [AppTheme.highContrastBackground, AppTheme.highContrastBackground];
+        return [
+          AppTheme.highContrastBackground,
+          AppTheme.highContrastBackground,
+        ];
       case ThemeStyle.bauhaus:
         return [BauhausTheme.primaryBlue, BauhausTheme.gradientEnd];
       case ThemeStyle.minimal:
@@ -41,6 +48,10 @@ class ThemeManager {
         return [NatureTheme.gradientStart, NatureTheme.gradientEnd];
       case ThemeStyle.cyberpunk:
         return [CyberpunkTheme.background, CyberpunkTheme.card];
+      case ThemeStyle.fono:
+        return [FonoTheme.background, FonoTheme.gradientEnd];
+      case ThemeStyle.digitalism:
+        return [DigitalismTheme.background, DigitalismTheme.background];
     }
   }
 
@@ -59,6 +70,10 @@ class ThemeManager {
         return NatureTheme.background;
       case ThemeStyle.cyberpunk:
         return CyberpunkTheme.background;
+      case ThemeStyle.fono:
+        return FonoTheme.background;
+      case ThemeStyle.digitalism:
+        return DigitalismTheme.background;
     }
   }
 
@@ -77,6 +92,10 @@ class ThemeManager {
         return NatureTheme.surface;
       case ThemeStyle.cyberpunk:
         return CyberpunkTheme.card;
+      case ThemeStyle.fono:
+        return FonoTheme.surface;
+      case ThemeStyle.digitalism:
+        return DigitalismTheme.surface;
     }
   }
 
@@ -95,6 +114,10 @@ class ThemeManager {
         return NatureTheme.textPrimary;
       case ThemeStyle.cyberpunk:
         return CyberpunkTheme.foreground;
+      case ThemeStyle.fono:
+        return FonoTheme.textPrimary;
+      case ThemeStyle.digitalism:
+        return DigitalismTheme.textPrimary;
     }
   }
 
@@ -109,7 +132,10 @@ class ThemeManager {
       case ThemeStyle.cyberpunk:
         return Colors.white;
       case ThemeStyle.minimal:
-        return MinimalTheme.textPrimary;
+      case ThemeStyle.digitalism:
+        return DigitalismTheme.textPrimary;
+      case ThemeStyle.fono:
+        return FonoTheme.textPrimary;
     }
   }
 
@@ -128,6 +154,10 @@ class ThemeManager {
         return NatureTheme.correctColor;
       case ThemeStyle.cyberpunk:
         return CyberpunkTheme.correctColor;
+      case ThemeStyle.fono:
+        return FonoTheme.correctColor;
+      case ThemeStyle.digitalism:
+        return DigitalismTheme.correctColor;
     }
   }
 
@@ -146,6 +176,10 @@ class ThemeManager {
         return NatureTheme.wrongColor;
       case ThemeStyle.cyberpunk:
         return CyberpunkTheme.wrongColor;
+      case ThemeStyle.fono:
+        return FonoTheme.wrongColor;
+      case ThemeStyle.digitalism:
+        return DigitalismTheme.wrongColor;
     }
   }
 
@@ -164,6 +198,10 @@ class ThemeManager {
         return NatureTheme.warningColor;
       case ThemeStyle.cyberpunk:
         return CyberpunkTheme.warningColor;
+      case ThemeStyle.fono:
+        return FonoTheme.warningColor;
+      case ThemeStyle.digitalism:
+        return DigitalismTheme.warningColor;
     }
   }
 
@@ -181,6 +219,10 @@ class ThemeManager {
         return NatureTheme.getLevelBadgeColor(level);
       case ThemeStyle.cyberpunk:
         return CyberpunkTheme.getLevelBadgeColor(level);
+      case ThemeStyle.fono:
+        return FonoTheme.getLevelBadgeColor(level);
+      case ThemeStyle.digitalism:
+        return DigitalismTheme.accentPeach;
     }
   }
 
@@ -204,6 +246,32 @@ class ThemeManager {
         return NatureTheme.primaryGreen;
       case ThemeStyle.cyberpunk:
         return CyberpunkTheme.neonGreen;
+      case ThemeStyle.fono:
+        return FonoTheme.textPrimary;
+      case ThemeStyle.digitalism:
+        return DigitalismTheme.textPrimary;
+    }
+  }
+
+  /// 获取看义拼词/产出模块专属主题色（保证在各主题及底色容器上有最高清晰度与视觉辨识度）
+  static Color getProductionColor(ThemeStyle style) {
+    switch (style) {
+      case ThemeStyle.standard:
+        return const Color(0xFF2563EB); // 经典皇家蓝
+      case ThemeStyle.highContrast:
+        return const Color(0xFF00E5FF); // 高对比度亮青
+      case ThemeStyle.bauhaus:
+        return BauhausTheme.primaryBlue; // 包豪斯原色蓝
+      case ThemeStyle.minimal:
+        return const Color(0xFF1F2937); // 极简冷灰黑
+      case ThemeStyle.nature:
+        return const Color(0xFF0284C7); // 自然天青蓝
+      case ThemeStyle.cyberpunk:
+        return CyberpunkTheme.neonCyan; // 赛博霓虹电光蓝/青
+      case ThemeStyle.fono:
+        return const Color(0xFF38BDF8); // 工业冷光天蓝
+      case ThemeStyle.digitalism:
+        return const Color(0xFF1D4ED8); // 复古深宝蓝（与蜜桃粉形成极致美学对比）
     }
   }
 
@@ -222,6 +290,10 @@ class ThemeManager {
         return NatureTheme.border;
       case ThemeStyle.cyberpunk:
         return CyberpunkTheme.border;
+      case ThemeStyle.fono:
+        return FonoTheme.border;
+      case ThemeStyle.digitalism:
+        return DigitalismTheme.border;
     }
   }
 
@@ -232,6 +304,10 @@ class ThemeManager {
         return 3.0;
       case ThemeStyle.highContrast:
         return 2.0;
+      case ThemeStyle.digitalism:
+        return DigitalismTheme.borderWidth;
+      case ThemeStyle.fono:
+        return FonoTheme.borderWidth;
       case ThemeStyle.cyberpunk:
         return 1.0;
       default:
@@ -250,6 +326,10 @@ class ThemeManager {
         return 8.0;
       case ThemeStyle.nature:
         return 16.0;
+      case ThemeStyle.digitalism:
+        return DigitalismTheme.cardRadius;
+      case ThemeStyle.fono:
+        return FonoTheme.cardRadius;
       default:
         return 20.0;
     }
@@ -264,6 +344,10 @@ class ThemeManager {
         return 4.0;
       case ThemeStyle.minimal:
         return 16.0;
+      case ThemeStyle.digitalism:
+        return 20.0;
+      case ThemeStyle.fono:
+        return 24.0;
       default:
         return 30.0;
     }
@@ -274,9 +358,12 @@ class ThemeManager {
     switch (style) {
       case ThemeStyle.bauhaus:
         return BauhausTheme.hardShadowMedium;
+      case ThemeStyle.digitalism:
+        return DigitalismTheme.hardShadow;
       case ThemeStyle.highContrast:
       case ThemeStyle.cyberpunk:
-        return []; // 深色主题不使用阴影
+      case ThemeStyle.fono:
+        return []; // 深色主题与工学仪表主题不使用阴影
       case ThemeStyle.minimal:
         return [
           BoxShadow(
@@ -305,7 +392,10 @@ class ThemeManager {
   }
 
   /// 获取卡片装饰
-  static BoxDecoration getCardDecoration(ThemeStyle style, {bool elevated = false}) {
+  static BoxDecoration getCardDecoration(
+    ThemeStyle style, {
+    bool elevated = false,
+  }) {
     final surfaceColor = getSurfaceColor(style);
     final borderColor = getBorderColor(style);
     final borderWidth = getBorderWidth(style);
@@ -360,6 +450,29 @@ class ThemeManager {
       );
     }
 
+    if (style == ThemeStyle.fono) {
+      return BoxDecoration(
+        color: isOutlined ? Colors.transparent : color,
+        borderRadius: BorderRadius.circular(FonoTheme.pillRadius),
+        border: Border.all(
+          color: FonoTheme.border,
+          width: FonoTheme.borderWidth,
+        ),
+      );
+    }
+
+    if (style == ThemeStyle.digitalism) {
+      return BoxDecoration(
+        color: isOutlined ? Colors.transparent : color,
+        borderRadius: BorderRadius.circular(DigitalismTheme.buttonRadius),
+        border: Border.all(
+          color: DigitalismTheme.border,
+          width: DigitalismTheme.borderWidth,
+        ),
+        boxShadow: isOutlined ? null : DigitalismTheme.buttonShadow,
+      );
+    }
+
     return BoxDecoration(
       color: isOutlined ? Colors.transparent : color,
       borderRadius: BorderRadius.circular(borderRadius),
@@ -368,7 +481,10 @@ class ThemeManager {
   }
 
   /// 获取图标容器装饰
-  static BoxDecoration getIconContainerDecoration(ThemeStyle style, Color color) {
+  static BoxDecoration getIconContainerDecoration(
+    ThemeStyle style,
+    Color color,
+  ) {
     final borderRadius = getBorderRadius(style);
 
     if (style == ThemeStyle.bauhaus) {
@@ -383,6 +499,26 @@ class ThemeManager {
         color: color.withValues(alpha: 0.2),
         borderRadius: BorderRadius.circular(borderRadius),
         border: Border.all(color: color.withValues(alpha: 0.5), width: 1),
+      );
+    }
+
+    if (style == ThemeStyle.fono) {
+      return BoxDecoration(
+        color: color.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(FonoTheme.pillRadius),
+        border: Border.all(color: FonoTheme.border, width: 1.0),
+      );
+    }
+
+    if (style == ThemeStyle.digitalism) {
+      return BoxDecoration(
+        color: DigitalismTheme.accentPeach,
+        borderRadius: BorderRadius.circular(DigitalismTheme.badgeRadius),
+        border: Border.all(
+          color: DigitalismTheme.border,
+          width: DigitalismTheme.borderThin,
+        ),
+        boxShadow: DigitalismTheme.smallShadow,
       );
     }
 
@@ -413,6 +549,29 @@ class ThemeManager {
       );
     }
 
+    if (style == ThemeStyle.fono) {
+      return BoxDecoration(
+        color: FonoTheme.surface,
+        borderRadius: BorderRadius.circular(FonoTheme.cardRadius),
+        border: Border.all(
+          color: FonoTheme.border,
+          width: FonoTheme.borderWidth,
+        ),
+      );
+    }
+
+    if (style == ThemeStyle.digitalism) {
+      return BoxDecoration(
+        color: DigitalismTheme.surface,
+        borderRadius: BorderRadius.circular(DigitalismTheme.cardRadius),
+        border: Border.all(
+          color: DigitalismTheme.border,
+          width: DigitalismTheme.borderWidth,
+        ),
+        boxShadow: DigitalismTheme.hardShadow,
+      );
+    }
+
     return BoxDecoration(
       color: color.withValues(alpha: 0.1),
       borderRadius: BorderRadius.circular(borderRadius * 0.8),
@@ -429,6 +588,10 @@ class ThemeManager {
         return CyberpunkTheme.border;
       case ThemeStyle.bauhaus:
         return BauhausTheme.muted;
+      case ThemeStyle.fono:
+        return const Color(0xFFD6DEC9);
+      case ThemeStyle.digitalism:
+        return DigitalismTheme.progressTrack;
       default:
         return Colors.grey.shade200;
     }
@@ -449,14 +612,20 @@ class ThemeManager {
         return NatureTheme.textSecondary;
       case ThemeStyle.cyberpunk:
         return CyberpunkTheme.mutedForeground;
+      case ThemeStyle.fono:
+        return FonoTheme.textSecondary;
+      case ThemeStyle.digitalism:
+        return DigitalismTheme.textSecondary;
     }
   }
 
   /// 是否需要边框（用于卡片等）
   static bool needsBorder(ThemeStyle style) {
-    return style == ThemeStyle.bauhaus || 
-           style == ThemeStyle.highContrast || 
-           style == ThemeStyle.cyberpunk;
+    return style == ThemeStyle.bauhaus ||
+        style == ThemeStyle.highContrast ||
+        style == ThemeStyle.cyberpunk ||
+        style == ThemeStyle.fono ||
+        style == ThemeStyle.digitalism;
   }
 
   /// 获取状态栏样式
@@ -466,6 +635,8 @@ class ThemeManager {
       case ThemeStyle.cyberpunk:
         return Brightness.light;
       case ThemeStyle.minimal:
+      case ThemeStyle.fono:
+      case ThemeStyle.digitalism:
         return Brightness.dark;
       default:
         return Brightness.light;

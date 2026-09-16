@@ -7,11 +7,7 @@ import 'package:vocab_flash_test/main.dart';
 void main() {
   testWidgets('App loads successfully', (WidgetTester tester) async {
     // Build our app and trigger a frame.
-    await tester.pumpWidget(
-      const ProviderScope(
-        child: VocabFlashTestApp(),
-      ),
-    );
+    await tester.pumpWidget(const ProviderScope(child: VocabFlashTestApp()));
 
     // Wait for the app to load
     await tester.pump();

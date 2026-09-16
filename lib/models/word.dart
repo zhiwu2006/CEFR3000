@@ -41,6 +41,11 @@ class Word {
   /// 获取首选中文释义
   String get primaryDefinition => cnDefs.isNotEmpty ? cnDefs.first : headword;
 
+  /// 新内容模型使用的稳定 ID；旧资源的数值 ID 保留在映射中。
+  String get stableId => 'legacy:$id';
+
+  String get primarySenseId => '$stableId:sense:primary';
+
   /// 获取主要词性（去除细节）
   String get majorPos {
     final pos = this.pos.toLowerCase();
@@ -66,5 +71,6 @@ class Word {
   int get hashCode => id.hashCode;
 
   @override
-  String toString() => 'Word(id: $id, headword: $headword, level: $level, pos: $pos)';
+  String toString() =>
+      'Word(id: $id, headword: $headword, level: $level, pos: $pos)';
 }

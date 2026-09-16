@@ -37,6 +37,10 @@ progress_export.json
 .codebuddy/
 .metadata
 
+# Flutter-generated platform artifacts and local one-off scripts
+**/Flutter/ephemeral/
+/update_script.py
+
 # Symbolication related
 app.*.symbols
 

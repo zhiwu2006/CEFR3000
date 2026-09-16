@@ -25,13 +25,16 @@ class CardStateAdapter extends TypeAdapter<CardState> {
       rtP50: fields[5] as int,
       flags: fields[6] as int,
       lastReview: fields[7] as DateTime,
+      longTermReviews:
+          fields[8] as int? ?? ((fields[1] as double) >= 16 ? 2 : 0),
+      revision: fields[9] as int? ?? 0,
     );
   }
 
   @override
   void write(BinaryWriter writer, CardState obj) {
     writer
-      ..writeByte(8)
+      ..writeByte(10)
       ..writeByte(0)
       ..write(obj.wordId)
       ..writeByte(1)
@@ -47,7 +50,11 @@ class CardStateAdapter extends TypeAdapter<CardState> {
       ..writeByte(6)
       ..write(obj.flags)
       ..writeByte(7)
-      ..write(obj.lastReview);
+      ..write(obj.lastReview)
+      ..writeByte(8)
+      ..write(obj.longTermReviews)
+      ..writeByte(9)
+      ..write(obj.revision);
   }
 
   @override
@@ -66,23 +73,27 @@ class CardStateAdapter extends TypeAdapter<CardState> {
 // **************************************************************************
 
 CardState _$CardStateFromJson(Map<String, dynamic> json) => CardState(
-      wordId: (json['wordId'] as num).toInt(),
-      stability: (json['stability'] as num).toDouble(),
-      difficulty: (json['difficulty'] as num).toDouble(),
-      due: DateTime.parse(json['due'] as String),
-      lapses: (json['lapses'] as num).toInt(),
-      rtP50: (json['rtP50'] as num).toInt(),
-      flags: (json['flags'] as num).toInt(),
-      lastReview: DateTime.parse(json['lastReview'] as String),
-    );
+  wordId: (json['wordId'] as num).toInt(),
+  stability: (json['stability'] as num).toDouble(),
+  difficulty: (json['difficulty'] as num).toDouble(),
+  due: DateTime.parse(json['due'] as String),
+  lapses: (json['lapses'] as num).toInt(),
+  rtP50: (json['rtP50'] as num).toInt(),
+  flags: (json['flags'] as num).toInt(),
+  lastReview: DateTime.parse(json['lastReview'] as String),
+  longTermReviews: (json['longTermReviews'] as num?)?.toInt() ?? 0,
+  revision: (json['revision'] as num?)?.toInt() ?? 0,
+);
 
 Map<String, dynamic> _$CardStateToJson(CardState instance) => <String, dynamic>{
-      'wordId': instance.wordId,
-      'stability': instance.stability,
-      'difficulty': instance.difficulty,
-      'due': instance.due.toIso8601String(),
-      'lapses': instance.lapses,
-      'rtP50': instance.rtP50,
-      'flags': instance.flags,
-      'lastReview': instance.lastReview.toIso8601String(),
-    };
+  'wordId': instance.wordId,
+  'stability': instance.stability,
+  'difficulty': instance.difficulty,
+  'due': instance.due.toIso8601String(),
+  'lapses': instance.lapses,
+  'rtP50': instance.rtP50,
+  'flags': instance.flags,
+  'lastReview': instance.lastReview.toIso8601String(),
+  'longTermReviews': instance.longTermReviews,
+  'revision': instance.revision,
+};

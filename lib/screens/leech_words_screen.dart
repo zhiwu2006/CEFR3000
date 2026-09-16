@@ -6,6 +6,9 @@ import '../session/base_providers.dart';
 import '../session/session_models.dart';
 import '../models/word.dart';
 import '../models/word_status.dart';
+import '../features/memory/domain/leech_intervention.dart';
+import '../data/word_preference_repository.dart';
+
 import '../theme/theme_manager.dart';
 import '../theme/theme_style.dart';
 
@@ -52,6 +55,49 @@ class _LeechWordsScreenState extends ConsumerState<LeechWordsScreen> {
     setState(() {
       _selectedIds.clear();
     });
+  }
+
+  Future<void> _suspendSelected() async {
+    if (_selectedIds.isEmpty) return;
+    final repository = ref.read(progressRepositoryProvider);
+    if (repository is! WordPreferenceRepository) return;
+    final preferenceRepository = repository as WordPreferenceRepository;
+    final now = DateTime.now();
+    for (final wordId in _selectedIds) {
+      await preferenceRepository.saveWordPreference(
+        UserWordPreference(
+          lexemeId: 'legacy:$wordId',
+          suspended: true,
+          updatedAt: now,
+        ),
+      );
+    }
+    if (!mounted) return;
+    setState(() => _selectedIds.clear());
+    ref.invalidate(todayStudyPlanProvider);
+    ref.invalidate(todayRecognitionPlanProvider);
+    ref.invalidate(todayProductionPlanProvider);
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('已暂不学习，之后可在词库中恢复')),
+    );
+  }
+
+  Future<void> _restoreSelected() async {
+    if (_selectedIds.isEmpty) return;
+    final repository = ref.read(progressRepositoryProvider);
+    if (repository is! WordPreferenceRepository) return;
+    final preferenceRepository = repository as WordPreferenceRepository;
+    for (final wordId in _selectedIds) {
+      await preferenceRepository.clearWordPreference('legacy:$wordId');
+    }
+    if (!mounted) return;
+    setState(() => _selectedIds.clear());
+    ref.invalidate(todayStudyPlanProvider);
+    ref.invalidate(todayRecognitionPlanProvider);
+    ref.invalidate(todayProductionPlanProvider);
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('已恢复到学习计划')),
+    );
   }
 
   String _formatDate(DateTime date, {bool includeTime = false}) {
@@ -164,6 +210,16 @@ class _LeechWordsScreenState extends ConsumerState<LeechWordsScreen> {
             icon: const Icon(Icons.check_circle_outline),
             tooltip: '标记已掌握',
             onPressed: _markSelectedKnown,
+          ),
+          IconButton(
+            icon: const Icon(Icons.pause_circle_outline),
+            tooltip: '暂不学习',
+            onPressed: _suspendSelected,
+          ),
+          IconButton(
+            icon: const Icon(Icons.play_circle_outline),
+            tooltip: '恢复学习',
+            onPressed: _restoreSelected,
           ),
         ],
       );
@@ -408,6 +464,9 @@ class _LeechWordsScreenState extends ConsumerState<LeechWordsScreen> {
     final isMarkedDifficult = status.state?.isMarkedDifficult ?? false;
     final warningColor = ThemeManager.getWarningColor(themeStyle);
     final wrongColor = ThemeManager.getWrongColor(themeStyle);
+    final intervention = status.state == null
+        ? null
+        : const LeechInterventionPolicy().plan(status.state!);
 
     return Card(
       margin: const EdgeInsets.only(bottom: 8),
@@ -499,13 +558,13 @@ class _LeechWordsScreenState extends ConsumerState<LeechWordsScreen> {
                     ),
                     decoration: BoxDecoration(
                       color: isMarkedDifficult
-            ? warningColor.withValues(alpha: 0.1)
-            : wrongColor.withValues(alpha: 0.1),
+                          ? warningColor.withValues(alpha: 0.1)
+                          : wrongColor.withValues(alpha: 0.1),
                       borderRadius: BorderRadius.circular(12),
                       border: Border.all(
                         color: isMarkedDifficult
-            ? warningColor.withValues(alpha: 0.5)
-            : wrongColor.withValues(alpha: 0.5),
+                            ? warningColor.withValues(alpha: 0.5)
+                            : wrongColor.withValues(alpha: 0.5),
                       ),
                     ),
                     child: Text(
@@ -538,6 +597,50 @@ class _LeechWordsScreenState extends ConsumerState<LeechWordsScreen> {
                   _buildStatItem(theme, '练习', '${status.attemptCount}次'),
                 ],
               ),
+              if (intervention != null) ...[
+                const SizedBox(height: 10),
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 10,
+                  ),
+                  decoration: BoxDecoration(
+                    color: theme.colorScheme.surfaceContainerHighest,
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(Icons.route_outlined, size: 18, color: warningColor),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          '建议：${intervention.reason}（本轮最多 ${intervention.suggestedAttempts} 次）',
+                          style: theme.textTheme.bodySmall,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+              if (!_isSelectionMode) ...[
+                const SizedBox(height: 12),
+                Align(
+                  alignment: Alignment.centerRight,
+                  child: TextButton.icon(
+                    onPressed: () => _showDetailedExplanation(context, word),
+                    icon: const Icon(Icons.auto_stories, size: 18),
+                    label: const Text('详细释义'),
+                    style: TextButton.styleFrom(
+                      foregroundColor: theme.colorScheme.primary,
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 16,
+                        vertical: 8,
+                      ),
+                    ),
+                  ),
+                ),
+              ],
             ],
           ),
         ),
@@ -924,5 +1027,265 @@ class _LeechWordsScreenState extends ConsumerState<LeechWordsScreen> {
         );
       }
     }
+  }
+
+  void _showDetailedExplanation(BuildContext context, Word word) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) => _DetailedExplanationSheet(word: word),
+    );
+  }
+}
+
+class _DetailedExplanationSheet extends ConsumerWidget {
+  final Word word;
+
+  const _DetailedExplanationSheet({required this.word});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final theme = Theme.of(context);
+    final explanationAsync = ref.watch(wordDetailedExplanationProvider(word));
+
+    return DraggableScrollableSheet(
+      initialChildSize: 0.7,
+      minChildSize: 0.5,
+      maxChildSize: 0.9,
+      builder: (context, scrollController) {
+        return Container(
+          decoration: BoxDecoration(
+            color: theme.colorScheme.surface,
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.1),
+                blurRadius: 10,
+                offset: const Offset(0, -2),
+              ),
+            ],
+          ),
+          child: Column(
+            children: [
+              // Handle bar
+              Center(
+                child: Container(
+                  margin: const EdgeInsets.only(top: 12, bottom: 8),
+                  width: 40,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: theme.colorScheme.outlineVariant,
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+              ),
+              // Header
+              Padding(
+                padding: const EdgeInsets.fromLTRB(24, 8, 24, 16),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        word.headword,
+                        style: theme.textTheme.headlineMedium?.copyWith(
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.close),
+                      onPressed: () => Navigator.pop(context),
+                    ),
+                  ],
+                ),
+              ),
+              const Divider(height: 1),
+              // Content
+              Expanded(
+                child: explanationAsync.when(
+                  data: (data) {
+                    if (data.error != null) {
+                      return _buildErrorState(theme, data.error!, ref);
+                    }
+                    return ListView(
+                      controller: scrollController,
+                      padding: const EdgeInsets.all(24),
+                      children: [
+                        if (data.shortMeaning.isNotEmpty)
+                          _buildSection(theme, '核心含义', data.shortMeaning),
+                        if (data.ipa.isNotEmpty)
+                          _buildSection(theme, '音标', data.ipa),
+                        if (data.definitionEn.isNotEmpty)
+                          _buildSection(theme, '英文释义', data.definitionEn),
+                        if (data.exampleEn.isNotEmpty ||
+                            data.exampleCn.isNotEmpty)
+                          _buildExampleSection(
+                            theme,
+                            data.exampleEn,
+                            data.exampleCn,
+                          ),
+                        if (data.morphologyRoot.isNotEmpty)
+                          _buildSection(theme, '词根', data.morphologyRoot),
+                        if (data.morphologyAffixes.isNotEmpty)
+                          _buildSection(theme, '词缀分析', data.morphologyAffixes),
+                        if (data.wordFamily.isNotEmpty)
+                          _buildListSection(theme, '词族', data.wordFamily),
+                        if (data.synonyms.isNotEmpty)
+                          _buildListSection(theme, '同义词', data.synonyms),
+                        if (data.antonyms.isNotEmpty)
+                          _buildListSection(theme, '反义词', data.antonyms),
+                        if (data.nuance.isNotEmpty)
+                          _buildSection(theme, '细微差别', data.nuance),
+                        if (data.collocations.isNotEmpty)
+                          _buildListSection(theme, '常见搭配', data.collocations),
+                        if (data.mnemonic.isNotEmpty)
+                          _buildSection(theme, '记忆法', data.mnemonic),
+                      ],
+                    );
+                  },
+                  loading: () =>
+                      const Center(child: CircularProgressIndicator()),
+                  error: (error, stack) =>
+                      _buildErrorState(theme, error.toString(), ref),
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildErrorState(ThemeData theme, String errorMsg, WidgetRef ref) {
+    String displayMsg = errorMsg;
+    if (errorMsg.contains('missing_api_key')) {
+      displayMsg = '未设置 API Key';
+    } else if (errorMsg.startsWith('http_')) {
+      displayMsg = '请求失败';
+    } else if (errorMsg == 'request_failed') {
+      displayMsg = '网络请求失败';
+    }
+
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(32),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(Icons.error_outline, size: 48, color: theme.colorScheme.error),
+            const SizedBox(height: 16),
+            Text(
+              displayMsg,
+              style: theme.textTheme.titleMedium?.copyWith(
+                color: theme.colorScheme.error,
+              ),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 24),
+            ElevatedButton.icon(
+              onPressed: () =>
+                  ref.refresh(wordDetailedExplanationProvider(word)),
+              icon: const Icon(Icons.refresh),
+              label: const Text('重试'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSection(ThemeData theme, String title, String content) {
+    if (content.isEmpty) return const SizedBox.shrink();
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 24),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            title,
+            style: theme.textTheme.titleSmall?.copyWith(
+              color: theme.colorScheme.primary,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            content,
+            style: theme.textTheme.bodyMedium?.copyWith(height: 1.5),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildListSection(ThemeData theme, String title, List<String> items) {
+    if (items.isEmpty) return const SizedBox.shrink();
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 24),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            title,
+            style: theme.textTheme.titleSmall?.copyWith(
+              color: theme.colorScheme.primary,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: items
+                .map(
+                  (item) => Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 6,
+                    ),
+                    decoration: BoxDecoration(
+                      color: theme.colorScheme.surfaceContainerHighest,
+                      borderRadius: BorderRadius.circular(16),
+                    ),
+                    child: Text(item, style: theme.textTheme.bodyMedium),
+                  ),
+                )
+                .toList(),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildExampleSection(ThemeData theme, String en, String cn) {
+    if (en.isEmpty && cn.isEmpty) return const SizedBox.shrink();
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 24),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            '例句',
+            style: theme.textTheme.titleSmall?.copyWith(
+              color: theme.colorScheme.primary,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+          const SizedBox(height: 8),
+          if (en.isNotEmpty)
+            Text(en, style: theme.textTheme.bodyMedium?.copyWith(height: 1.5)),
+          if (cn.isNotEmpty)
+            Text(
+              cn,
+              style: theme.textTheme.bodyMedium?.copyWith(
+                height: 1.5,
+                color: theme.colorScheme.outline,
+              ),
+            ),
+        ],
+      ),
+    );
   }
 }

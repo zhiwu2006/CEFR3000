@@ -60,20 +60,19 @@ class WordAdapter extends TypeAdapter<Word> {
 // **************************************************************************
 
 Word _$WordFromJson(Map<String, dynamic> json) => Word(
-      id: (json['id'] as num).toInt(),
-      headword: json['headword'] as String,
-      lemma: json['lemma'] as String,
-      level: json['level'] as String,
-      pos: json['pos'] as String,
-      cnDefs:
-          (json['cn_defs'] as List<dynamic>).map((e) => e as String).toList(),
-    );
+  id: (json['id'] as num).toInt(),
+  headword: json['headword'] as String,
+  lemma: json['lemma'] as String,
+  level: json['level'] as String,
+  pos: json['pos'] as String,
+  cnDefs: (json['cn_defs'] as List<dynamic>).map((e) => e as String).toList(),
+);
 
 Map<String, dynamic> _$WordToJson(Word instance) => <String, dynamic>{
-      'id': instance.id,
-      'headword': instance.headword,
-      'lemma': instance.lemma,
-      'level': instance.level,
-      'pos': instance.pos,
-      'cn_defs': instance.cnDefs,
-    };
+  'id': instance.id,
+  'headword': instance.headword,
+  'lemma': instance.lemma,
+  'level': instance.level,
+  'pos': instance.pos,
+  'cn_defs': instance.cnDefs,
+};

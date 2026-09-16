@@ -1,4 +1,5 @@
 import '../models/models.dart';
+import '../domain/srs.dart';
 
 /// 进度仓储接口
 abstract class ProgressRepository {
@@ -20,6 +21,15 @@ abstract class ProgressRepository {
   /// 获取不熟悉单词
   Future<List<Word>> getLeechWords(Set<String> levels);
 
+  /// 按用户配置获取不熟悉单词。
+  ///
+  /// 保留默认实现是为了让旧的仓储实现和测试替身继续兼容；新的调用方
+  /// 应优先使用这个方法，避免把默认的失忆阈值写死在数据层。
+  Future<List<Word>> getLeechWordsWithPolicy(
+    Set<String> levels,
+    LeechPolicy policy,
+  ) => getLeechWords(levels);
+
   /// 获取新单词
   Future<List<Word>> getNewWords(Set<String> levels, int limit);
 
@@ -39,7 +49,9 @@ abstract class ProgressRepository {
   Future<List<Attempt>> getWordAttempts(int wordId, {int limit = 10});
 
   /// 获取学习统计
-  Future<Map<String, dynamic>> getLearningStats();
+  Future<Map<String, dynamic>> getLearningStats({
+    LeechPolicy policy = LeechPolicy.defaultPolicy,
+  });
 
   /// 清除所有进度
   Future<void> clearAllProgress();
@@ -70,13 +82,22 @@ abstract class ProgressRepository {
 
   /// 取消单词疑难标记
   Future<void> unmarkWordDifficult(int wordId);
-  
+
   /// 获取指定天数的每日统计数据
   Future<List<Map<String, dynamic>>> getDailyStats(int days);
-  
+
   /// 获取指定级别的进度
   Future<Map<String, int>> getLevelProgress(Set<String> levels);
 
   /// 获取指定级别的单词学习状态列表
   Future<List<WordStudyStatus>> getWordStatuses(Set<String> levels);
+}
+
+/// 支持按用户配置筛选疑难词的仓储能力。
+/// 老的测试替身或第三方实现可以只实现 ProgressRepository，调用方会回退到默认策略。
+abstract class LeechPolicyProgressRepository {
+  Future<List<Word>> getLeechWordsWithPolicy(
+    Set<String> levels,
+    LeechPolicy policy,
+  );
 }
