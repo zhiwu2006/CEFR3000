@@ -16,379 +16,89 @@ class SummaryScreen extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final theme = Theme.of(context);
     final settings = ref.watch(appSettingsProvider);
-    final themeStyle = ThemeStyle.fromString(settings.themeStyle);
-    final correctColor = ThemeManager.getCorrectColor(themeStyle);
-    final wrongColor = ThemeManager.getWrongColor(themeStyle);
+    final style = ThemeStyle.fromString(settings.themeStyle);
+    final isTablet = MediaQuery.sizeOf(context).shortestSide >= 600;
+    final wrongAttempts = sessionData.firstWrongAttempts;
+
+    final summary = [
+      _Header(sessionData: sessionData, style: style),
+      const SizedBox(height: 20),
+      _HeroCard(sessionData: sessionData, style: style),
+      const SizedBox(height: 16),
+      _StatGrid(sessionData: sessionData, style: style),
+      if (sessionData.unresolvedWordIds.isNotEmpty) ...[
+        const SizedBox(height: 16),
+        _ConsolidationNotice(
+          count: sessionData.unresolvedWordIds.length,
+          style: style,
+        ),
+      ],
+    ];
+    final actions = _Actions(
+      wrongCount: sessionData.firstWrongWordIds.length,
+      style: style,
+      onPracticeWrong: () => _practiceWrongWords(context, ref, sessionData),
+      onNext: () => _startNewTest(context, ref, sessionData),
+      onHistory: () {
+        ref.invalidate(dailyHistorySummariesProvider);
+        Navigator.of(context).pushNamed('/daily_history');
+      },
+      onHome: () => _goHome(context, ref),
+    );
+    final review = wrongAttempts.isEmpty
+        ? _AllCorrect(style: style)
+        : _WrongList(attempts: wrongAttempts, style: style);
+
+    final Widget body;
+    if (isTablet && MediaQuery.sizeOf(context).width > 900) {
+      // 平板：左侧成绩与操作固定，右侧错题单独滚动。
+      body = Row(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          SizedBox(
+            width: 460,
+            child: ListView(
+              padding: const EdgeInsets.fromLTRB(32, 24, 16, 32),
+              children: [...summary, const SizedBox(height: 24), actions],
+            ),
+          ),
+          Expanded(
+            child: ListView(
+              padding: const EdgeInsets.fromLTRB(16, 24, 32, 32),
+              children: [review],
+            ),
+          ),
+        ],
+      );
+    } else {
+      body = ListView(
+        padding: const EdgeInsets.fromLTRB(16, 16, 16, 32),
+        children: [
+          ...summary,
+          const SizedBox(height: 20),
+          review,
+          const SizedBox(height: 24),
+          actions,
+        ],
+      );
+    }
 
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('测试总结'),
-        automaticallyImplyLeading: false,
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.home),
-            onPressed: () async {
-              // 清除测试进度
-              await ref.read(appSettingsProvider.notifier).clearTestProgress();
-              ref.invalidate(learningStatsProvider);
-              ref.invalidate(dailyHistorySummariesProvider);
-              if (!context.mounted) return;
-              Navigator.of(context).pushAndRemoveUntil(
-                MaterialPageRoute(builder: (_) => const HomeScreen()),
-                (route) => false,
-              );
-            },
-          ),
-        ],
-      ),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            _buildOverallStats(
-              context,
-              theme,
-              sessionData,
-              themeStyle,
-              correctColor,
-              wrongColor,
-            ),
-            const SizedBox(height: 24),
-            if (sessionData.unresolvedWordIds.isNotEmpty)
-              Card(
-                child: Padding(
-                  padding: const EdgeInsets.all(16),
-                  child: Text(
-                    '待巩固 ${sessionData.unresolvedWordIds.length} 词，已保留到下一组优先安排。\n'
-                    '本轮未完成巩固不等于已掌握：尾部没有足够的间隔题，或达到重测／总作答上限时，会保留待巩固任务，而不是立即重复或无限延长本轮。\n'
-                    '巩固标准为间隔后连续两次合格答对；下一组仍遵守所选等级和暂停设置。',
-                  ),
-                ),
-              ),
-            if (sessionData.firstWrongAttempts.isNotEmpty)
-              _buildWrongAttemptsList(
-                context,
-                theme,
-                sessionData,
-                ref,
-                themeStyle,
-                correctColor,
-                wrongColor,
-              ),
-            const SizedBox(height: 24),
-            _buildActionButtons(
-              context,
-              theme,
-              sessionData,
-              ref,
-              themeStyle,
-              wrongColor,
-            ),
-          ],
-        ),
-      ),
+      backgroundColor: ThemeManager.getBackgroundColor(style),
+      body: SafeArea(child: body),
     );
   }
 
-  Widget _buildOverallStats(
-    BuildContext context,
-    ThemeData theme,
-    SessionData sessionData,
-    ThemeStyle themeStyle,
-    Color correctColor,
-    Color wrongColor,
-  ) {
-    final accuracy = sessionData.firstAccuracy * 100;
-    final avgReactionTime = sessionData.avgReactionTime;
-    final totalWords = sessionData.firstAttempts.length;
-    final totalAttempts = sessionData.attempts.length;
-    final correctCount = sessionData.firstAttempts
-        .where((a) => a.isCorrect)
-        .length;
-    final wrongCount = sessionData.firstWrongWordIds.length;
-    final slowCorrectCount = sessionData.firstSlowCorrectAttempts.length;
-    final warningColor = ThemeManager.getWarningColor(themeStyle);
-
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          children: [
-            SizedBox(
-              height: 120,
-              child: Stack(
-                alignment: Alignment.center,
-                children: [
-                  SizedBox(
-                    width: 100,
-                    height: 100,
-                    child: CircularProgressIndicator(
-                      value: accuracy / 100,
-                      strokeWidth: 8,
-                      backgroundColor: Colors.grey.shade300,
-                      valueColor: AlwaysStoppedAnimation<Color>(
-                        _getAccuracyColor(
-                          accuracy,
-                          correctColor,
-                          warningColor,
-                          wrongColor,
-                        ),
-                      ),
-                    ),
-                  ),
-                  Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Text(
-                        '${accuracy.round()}%',
-                        style: theme.textTheme.headlineMedium?.copyWith(
-                          fontWeight: FontWeight.bold,
-                          color: _getAccuracyColor(
-                            accuracy,
-                            correctColor,
-                            warningColor,
-                            wrongColor,
-                          ),
-                        ),
-                      ),
-                      Text('准确率', style: theme.textTheme.bodySmall),
-                    ],
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 24),
-            Wrap(
-              alignment: WrapAlignment.spaceAround,
-              spacing: 24,
-              runSpacing: 16,
-              children: [
-                _buildStatColumn(
-                  context,
-                  '总题数',
-                  '$totalWords',
-                  Icons.quiz,
-                  theme.colorScheme.primary,
-                ),
-                _buildStatColumn(
-                  context,
-                  '正确',
-                  '$correctCount',
-                  Icons.check_circle,
-                  correctColor,
-                ),
-                _buildStatColumn(
-                  context,
-                  '错误',
-                  '$wrongCount',
-                  Icons.cancel,
-                  wrongColor,
-                ),
-              ],
-            ),
-            const SizedBox(height: 16),
-            Wrap(
-              alignment: WrapAlignment.spaceAround,
-              spacing: 24,
-              runSpacing: 16,
-              children: [
-                if (totalAttempts > totalWords)
-                  _buildStatColumn(
-                    context,
-                    '总作答',
-                    '$totalAttempts',
-                    Icons.repeat,
-                    theme.colorScheme.primary,
-                  ),
-                _buildStatColumn(
-                  context,
-                  '纠错成功',
-                  '${sessionData.correctedWordIds.length}',
-                  Icons.auto_fix_high,
-                  correctColor,
-                ),
-                _buildStatColumn(
-                  context,
-                  '平均用时',
-                  '${(avgReactionTime / 1000).toStringAsFixed(1)}s',
-                  Icons.timer,
-                  theme.colorScheme.secondary,
-                ),
-                _buildStatColumn(
-                  context,
-                  '勉强正确',
-                  '$slowCorrectCount',
-                  Icons.schedule,
-                  warningColor,
-                ),
-                _buildStatColumn(
-                  context,
-                  '配置',
-                  '${(sessionData.config.timeLimitMs / 1000).toStringAsFixed(1)}s',
-                  Icons.settings,
-                  Colors.grey,
-                ),
-              ],
-            ),
-          ],
-        ),
-      ),
+  Future<void> _goHome(BuildContext context, WidgetRef ref) async {
+    await ref.read(appSettingsProvider.notifier).clearTestProgress();
+    ref.invalidate(learningStatsProvider);
+    ref.invalidate(dailyHistorySummariesProvider);
+    if (!context.mounted) return;
+    Navigator.of(context).pushAndRemoveUntil(
+      MaterialPageRoute(builder: (_) => const HomeScreen()),
+      (route) => false,
     );
-  }
-
-  Widget _buildStatColumn(
-    BuildContext context,
-    String label,
-    String value,
-    IconData icon,
-    Color color,
-  ) {
-    final theme = Theme.of(context);
-    return Column(
-      children: [
-        Icon(icon, color: color, size: 20),
-        const SizedBox(height: 4),
-        Text(
-          value,
-          style: theme.textTheme.titleMedium?.copyWith(
-            fontWeight: FontWeight.bold,
-            color: color,
-          ),
-        ),
-        Text(label, style: theme.textTheme.bodySmall),
-      ],
-    );
-  }
-
-  Widget _buildWrongAttemptsList(
-    BuildContext context,
-    ThemeData theme,
-    SessionData sessionData,
-    WidgetRef ref,
-    ThemeStyle themeStyle,
-    Color correctColor,
-    Color wrongColor,
-  ) {
-    final wrongAttempts = sessionData.firstWrongAttempts;
-    final wordRepo = ref.read(wordRepositoryProvider);
-
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Icon(Icons.error_outline, color: wrongColor),
-                const SizedBox(width: 8),
-                Text(
-                  '错题回顾 (${wrongAttempts.length})',
-                  style: theme.textTheme.headlineSmall?.copyWith(
-                    color: wrongColor,
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 16),
-            ...wrongAttempts.map(
-              (attempt) => FutureBuilder<Word?>(
-                future: wordRepo.getById(attempt.wordId),
-                builder: (context, snapshot) {
-                  if (!snapshot.hasData) return const SizedBox.shrink();
-                  final word = snapshot.data!;
-                  return _WrongAttemptItem(
-                    attempt: attempt,
-                    word: word,
-                    themeStyle: themeStyle,
-                    correctColor: correctColor,
-                    wrongColor: wrongColor,
-                  );
-                },
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildActionButtons(
-    BuildContext context,
-    ThemeData theme,
-    SessionData sessionData,
-    WidgetRef ref,
-    ThemeStyle themeStyle,
-    Color wrongColor,
-  ) {
-    final wrongCount = sessionData.firstWrongWordIds.length;
-
-    return Column(
-      children: [
-        if (wrongCount > 0) ...[
-          ElevatedButton.icon(
-            onPressed: () => _practiceWrongWords(context, ref, sessionData),
-            icon: const Icon(Icons.replay),
-            label: Text('只练错题 ($wrongCount 词)'),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: wrongColor,
-              foregroundColor: Colors.white,
-              padding: const EdgeInsets.symmetric(vertical: 16),
-            ),
-          ),
-          const SizedBox(height: 16),
-        ],
-        OutlinedButton.icon(
-          onPressed: () => _startNewTest(context, ref, sessionData),
-          icon: const Icon(Icons.refresh),
-          label: const Text('重新测试'),
-          style: OutlinedButton.styleFrom(
-            padding: const EdgeInsets.symmetric(vertical: 16),
-          ),
-        ),
-        OutlinedButton.icon(
-          onPressed: () {
-            ref.invalidate(dailyHistorySummariesProvider);
-            Navigator.of(context).pushNamed('/daily_history');
-          },
-          icon: const Icon(Icons.analytics_outlined),
-          label: const Text('查看每日档案与重点复盘'),
-          style: OutlinedButton.styleFrom(
-            padding: const EdgeInsets.symmetric(vertical: 14),
-          ),
-        ),
-        const SizedBox(height: 12),
-        TextButton.icon(
-          onPressed: () async {
-            // 清除测试进度
-            await ref.read(appSettingsProvider.notifier).clearTestProgress();
-            ref.invalidate(learningStatsProvider);
-            ref.invalidate(dailyHistorySummariesProvider);
-            if (!context.mounted) return;
-            Navigator.of(context).pushAndRemoveUntil(
-              MaterialPageRoute(builder: (_) => const HomeScreen()),
-              (route) => false,
-            );
-          },
-          icon: const Icon(Icons.home),
-          label: const Text('回到首页'),
-        ),
-      ],
-    );
-  }
-
-  Color _getAccuracyColor(
-    double accuracy,
-    Color correctColor,
-    Color warningColor,
-    Color wrongColor,
-  ) {
-    if (accuracy >= 80) return correctColor;
-    if (accuracy >= 60) return warningColor;
-    return wrongColor;
   }
 
   Future<void> _practiceWrongWords(
@@ -457,16 +167,12 @@ class SummaryScreen extends ConsumerWidget {
 class _WrongAttemptItem extends ConsumerStatefulWidget {
   final Attempt attempt;
   final Word word;
-  final ThemeStyle themeStyle;
-  final Color correctColor;
-  final Color wrongColor;
+  final ThemeStyle style;
 
   const _WrongAttemptItem({
     required this.attempt,
     required this.word,
-    required this.themeStyle,
-    required this.correctColor,
-    required this.wrongColor,
+    required this.style,
   });
 
   @override
@@ -481,114 +187,608 @@ class _WrongAttemptItemState extends ConsumerState<_WrongAttemptItem> {
     final theme = Theme.of(context);
     final attempt = widget.attempt;
     final word = widget.word;
-    final isTimeout = attempt.isTimeout;
-    final reactionTime = isTimeout
-        ? '超时'
-        : '${(attempt.rtMs / 1000).toStringAsFixed(1)}s';
-    final levelBadgeColor = ThemeManager.getLevelBadgeColor(
-      widget.themeStyle,
-      word.level,
-    );
-    final borderRadius = ThemeManager.getBorderRadius(widget.themeStyle);
-    final secondaryTextColor = ThemeManager.getSecondaryTextColor(
-      widget.themeStyle,
-    );
+    final style = widget.style;
+    final wrongColor = ThemeManager.getWrongColor(style);
+    final warningColor = ThemeManager.getWarningColor(style);
+    final correctColor = ThemeManager.getCorrectColor(style);
+    final secondary = ThemeManager.getSecondaryTextColor(style);
+    final radius = ThemeManager.getBorderRadius(style);
+    final accent = attempt.isTimeout ? warningColor : wrongColor;
 
     return Container(
-      margin: const EdgeInsets.only(bottom: 8),
-      padding: const EdgeInsets.all(16),
+      margin: const EdgeInsets.only(bottom: 12),
       decoration: BoxDecoration(
-        color: widget.wrongColor.withValues(alpha: 0.1),
-        borderRadius: BorderRadius.circular(borderRadius),
-        border: Border.all(color: widget.wrongColor.withValues(alpha: 0.3)),
+        color: ThemeManager.getSurfaceColor(style),
+        borderRadius: BorderRadius.circular(radius),
+        border: Border.all(color: ThemeManager.getBorderColor(style)),
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Expanded(
-                child: Text(
-                  word.headword,
-                  style: theme.textTheme.titleMedium?.copyWith(
-                    fontWeight: FontWeight.bold,
-                  ),
+      clipBehavior: Clip.antiAlias,
+      child: IntrinsicHeight(
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Container(width: 5, color: accent),
+            Expanded(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(16, 14, 12, 10),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            word.headword,
+                            style: theme.textTheme.titleLarge?.copyWith(
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ),
+                        _Chip(
+                          label: word.level,
+                          color: ThemeManager.getLevelBadgeColor(
+                            style,
+                            word.level,
+                          ),
+                        ),
+                        const SizedBox(width: 6),
+                        _Chip(
+                          label: attempt.isTimeout
+                              ? '超时'
+                              : '选错 · ${(attempt.rtMs / 1000).toStringAsFixed(1)}s',
+                          color: accent,
+                        ),
+                      ],
+                    ),
+                    if (word.pos.isNotEmpty)
+                      Text(
+                        word.pos,
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: secondary,
+                          fontStyle: FontStyle.italic,
+                        ),
+                      ),
+                    const SizedBox(height: 8),
+                    Row(
+                      children: [
+                        Icon(Icons.check_circle, size: 18, color: correctColor),
+                        const SizedBox(width: 6),
+                        Expanded(
+                          child: Text(
+                            word.primaryDefinition,
+                            style: theme.textTheme.titleMedium?.copyWith(
+                              color: correctColor,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ),
+                        TextButton.icon(
+                          onPressed: () =>
+                              setState(() => _isExpanded = !_isExpanded),
+                          icon: Icon(
+                            _isExpanded
+                                ? Icons.expand_less
+                                : Icons.auto_awesome_outlined,
+                            size: 16,
+                          ),
+                          label: Text(_isExpanded ? '收起' : 'AI 助记'),
+                        ),
+                      ],
+                    ),
+                    if (_isExpanded) ...[
+                      const SizedBox(height: 8),
+                      _ExplanationContent(word: word),
+                    ],
+                  ],
                 ),
               ),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                decoration: BoxDecoration(
-                  color: levelBadgeColor,
-                  borderRadius: BorderRadius.circular(borderRadius * 0.5),
-                ),
-                child: Text(
-                  word.level,
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 10,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 8),
-          Text(
-            '正确答案: ${word.primaryDefinition}',
-            style: theme.textTheme.bodyMedium?.copyWith(
-              color: widget.correctColor,
-              fontWeight: FontWeight.w500,
             ),
-          ),
-          if (!isTimeout)
-            Text(
-              '你的选择: ${_getChosenAnswer(attempt, word)}',
-              style: theme.textTheme.bodyMedium?.copyWith(
-                color: widget.wrongColor,
-              ),
-            ),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Text(
-                '用时: $reactionTime',
-                style: theme.textTheme.bodySmall?.copyWith(
-                  color: secondaryTextColor,
-                ),
-              ),
-              TextButton.icon(
-                onPressed: () {
-                  setState(() {
-                    _isExpanded = !_isExpanded;
-                  });
-                },
-                icon: Icon(
-                  _isExpanded ? Icons.expand_less : Icons.smart_toy_outlined,
-                  size: 16,
-                ),
-                label: Text(_isExpanded ? '收起' : 'AI 助记'),
-                style: TextButton.styleFrom(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 8,
-                    vertical: 4,
-                  ),
-                  minimumSize: Size.zero,
-                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                ),
-              ),
-            ],
-          ),
-          if (_isExpanded) ...[
-            const SizedBox(height: 12),
-            _ExplanationContent(word: word),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+class _Chip extends StatelessWidget {
+  final String label;
+  final Color color;
+
+  const _Chip({required this.label, required this.color});
+
+  @override
+  Widget build(BuildContext context) => Container(
+    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+    decoration: BoxDecoration(
+      color: color.withValues(alpha: 0.14),
+      borderRadius: BorderRadius.circular(20),
+    ),
+    child: Text(
+      label,
+      style: TextStyle(color: color, fontSize: 12, fontWeight: FontWeight.w700),
+    ),
+  );
+}
+
+/// 顶部：标题与完成时间。
+class _Header extends StatelessWidget {
+  final SessionData sessionData;
+  final ThemeStyle style;
+
+  const _Header({required this.sessionData, required this.style});
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final now = DateTime.now();
+    final time =
+        '${now.month}月${now.day}日 ${now.hour.toString().padLeft(2, '0')}:'
+        '${now.minute.toString().padLeft(2, '0')}';
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          '本轮完成',
+          style: theme.textTheme.headlineMedium?.copyWith(
+            color: ThemeManager.getTextColor(style),
+            fontWeight: FontWeight.w800,
+          ),
+        ),
+        const SizedBox(height: 2),
+        Text(
+          '$time · 限时 ${(sessionData.config.timeLimitMs / 1000).toStringAsFixed(1)} 秒',
+          style: theme.textTheme.bodyMedium?.copyWith(
+            color: ThemeManager.getSecondaryTextColor(style),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+/// 首答准确率：大圆环 + 一句评价。
+class _HeroCard extends StatelessWidget {
+  final SessionData sessionData;
+  final ThemeStyle style;
+
+  const _HeroCard({required this.sessionData, required this.style});
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final accuracy = sessionData.firstAccuracy;
+    final total = sessionData.firstAttempts.length;
+    final correct = sessionData.firstAttempts.where((a) => a.isCorrect).length;
+    final color = accuracy >= 0.8
+        ? ThemeManager.getCorrectColor(style)
+        : accuracy >= 0.6
+        ? ThemeManager.getWarningColor(style)
+        : ThemeManager.getWrongColor(style);
+    final verdict = accuracy >= 0.9
+        ? '很稳，继续保持'
+        : accuracy >= 0.75
+        ? '不错，错题再过一遍就更牢了'
+        : accuracy >= 0.5
+        ? '有一半以上记住了，错题值得马上再练'
+        : '这组偏难，先把错题练熟再继续';
+
+    return Container(
+      padding: const EdgeInsets.all(20),
+      decoration: ThemeManager.getCardDecoration(style),
+      child: Row(
+        children: [
+          SizedBox(
+            width: 120,
+            height: 120,
+            child: Stack(
+              fit: StackFit.expand,
+              children: [
+                CircularProgressIndicator(
+                  value: 1,
+                  strokeWidth: 12,
+                  color: ThemeManager.getProgressBackgroundColor(style),
+                ),
+                TweenAnimationBuilder<double>(
+                  tween: Tween(begin: 0, end: accuracy),
+                  duration: const Duration(milliseconds: 900),
+                  curve: Curves.easeOutCubic,
+                  builder: (context, value, _) => CircularProgressIndicator(
+                    value: value,
+                    strokeWidth: 12,
+                    strokeCap: StrokeCap.round,
+                    color: color,
+                  ),
+                ),
+                Center(
+                  child: Text(
+                    '${(accuracy * 100).round()}%',
+                    style: theme.textTheme.headlineMedium?.copyWith(
+                      color: color,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 20),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  '首答正确率',
+                  style: theme.textTheme.labelLarge?.copyWith(
+                    color: ThemeManager.getSecondaryTextColor(style),
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text.rich(
+                  TextSpan(
+                    children: [
+                      TextSpan(
+                        text: '$correct',
+                        style: theme.textTheme.displaySmall?.copyWith(
+                          fontWeight: FontWeight.w800,
+                          color: ThemeManager.getTextColor(style),
+                        ),
+                      ),
+                      TextSpan(
+                        text: ' / $total 词',
+                        style: theme.textTheme.titleMedium?.copyWith(
+                          color: ThemeManager.getSecondaryTextColor(style),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  verdict,
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    color: ThemeManager.getTextColor(style),
+                  ),
+                ),
+              ],
+            ),
+          ),
         ],
       ),
     );
   }
+}
 
-  String _getChosenAnswer(Attempt attempt, Word word) {
-    return '选项${String.fromCharCode(65 + attempt.chosenIndex)}';
+/// 细分指标：等宽小卡片，两列或三列排布。
+class _StatGrid extends StatelessWidget {
+  final SessionData sessionData;
+  final ThemeStyle style;
+
+  const _StatGrid({required this.sessionData, required this.style});
+
+  @override
+  Widget build(BuildContext context) {
+    final correct = ThemeManager.getCorrectColor(style);
+    final wrong = ThemeManager.getWrongColor(style);
+    final warning = ThemeManager.getWarningColor(style);
+    final primary = ThemeManager.getPrimaryColor(style);
+    final total = sessionData.firstAttempts.length;
+    final attempts = sessionData.attempts.length;
+    final tiles = [
+      (
+        '答错',
+        '${sessionData.firstWrongWordIds.length}',
+        Icons.close_rounded,
+        wrong,
+      ),
+      (
+        '勉强正确',
+        '${sessionData.firstSlowCorrectAttempts.length}',
+        Icons.hourglass_bottom_rounded,
+        warning,
+      ),
+      (
+        '纠错成功',
+        '${sessionData.correctedWordIds.length}',
+        Icons.auto_fix_high_rounded,
+        correct,
+      ),
+      (
+        '平均用时',
+        '${(sessionData.avgReactionTime / 1000).toStringAsFixed(1)}s',
+        Icons.timer_outlined,
+        primary,
+      ),
+      if (attempts > total) ('总作答', '$attempts', Icons.repeat_rounded, primary),
+    ];
+    return LayoutBuilder(
+      builder: (context, box) {
+        final columns = box.maxWidth >= 520 ? 3 : 2;
+        const gap = 12.0;
+        final width = (box.maxWidth - gap * (columns - 1)) / columns;
+        return Wrap(
+          spacing: gap,
+          runSpacing: gap,
+          children: [
+            for (final (label, value, icon, color) in tiles)
+              SizedBox(
+                width: width,
+                child: _StatTile(
+                  label: label,
+                  value: value,
+                  icon: icon,
+                  color: color,
+                  style: style,
+                ),
+              ),
+          ],
+        );
+      },
+    );
+  }
+}
+
+class _StatTile extends StatelessWidget {
+  final String label;
+  final String value;
+  final IconData icon;
+  final Color color;
+  final ThemeStyle style;
+
+  const _StatTile({
+    required this.label,
+    required this.value,
+    required this.icon,
+    required this.color,
+    required this.style,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      decoration: BoxDecoration(
+        color: ThemeManager.getSurfaceColor(style),
+        borderRadius: BorderRadius.circular(
+          ThemeManager.getBorderRadius(style),
+        ),
+        border: Border.all(color: ThemeManager.getBorderColor(style)),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 36,
+            height: 36,
+            decoration: BoxDecoration(
+              color: color.withValues(alpha: 0.14),
+              shape: BoxShape.circle,
+            ),
+            child: Icon(icon, size: 20, color: color),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  value,
+                  style: theme.textTheme.titleLarge?.copyWith(
+                    fontWeight: FontWeight.w800,
+                    color: ThemeManager.getTextColor(style),
+                  ),
+                ),
+                Text(
+                  label,
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: ThemeManager.getSecondaryTextColor(style),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// 待巩固提示：一句话说明，详细规则点开再看。
+class _ConsolidationNotice extends StatelessWidget {
+  final int count;
+  final ThemeStyle style;
+
+  const _ConsolidationNotice({required this.count, required this.style});
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final color = ThemeManager.getWarningColor(style);
+    // 用 Material 承载底色，展开时的水波纹才不会被遮住。
+    return Material(
+      color: color.withValues(alpha: 0.10),
+      clipBehavior: Clip.antiAlias,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(
+          ThemeManager.getBorderRadius(style),
+        ),
+        side: BorderSide(color: color.withValues(alpha: 0.35)),
+      ),
+      child: Theme(
+        data: theme.copyWith(dividerColor: Colors.transparent),
+        child: ExpansionTile(
+          leading: Icon(Icons.bookmark_added_outlined, color: color),
+          title: Text(
+            '$count 词待巩固，已排到下一组优先复习',
+            style: theme.textTheme.titleSmall,
+          ),
+          childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 14),
+          children: [
+            Text(
+              '巩固标准是隔几题后连续两次答对。本轮末尾间隔不够、或达到重测上限时，'
+              '这些词会留到下一组继续，而不是在本轮无限重复。',
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: ThemeManager.getSecondaryTextColor(style),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// 错题回顾列表。
+class _WrongList extends ConsumerWidget {
+  final List<Attempt> attempts;
+  final ThemeStyle style;
+
+  const _WrongList({required this.attempts, required this.style});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final theme = Theme.of(context);
+    final wordRepo = ref.read(wordRepositoryProvider);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Padding(
+          padding: const EdgeInsets.only(bottom: 12, left: 2),
+          child: Text(
+            '错题回顾 · ${attempts.length}',
+            style: theme.textTheme.titleLarge?.copyWith(
+              fontWeight: FontWeight.w700,
+              color: ThemeManager.getTextColor(style),
+            ),
+          ),
+        ),
+        for (final attempt in attempts)
+          FutureBuilder<Word?>(
+            future: wordRepo.getById(attempt.wordId),
+            builder: (context, snapshot) {
+              final word = snapshot.data;
+              if (word == null) return const SizedBox.shrink();
+              return _WrongAttemptItem(
+                attempt: attempt,
+                word: word,
+                style: style,
+              );
+            },
+          ),
+      ],
+    );
+  }
+}
+
+class _AllCorrect extends StatelessWidget {
+  final ThemeStyle style;
+
+  const _AllCorrect({required this.style});
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final color = ThemeManager.getCorrectColor(style);
+    return Container(
+      padding: const EdgeInsets.symmetric(vertical: 40, horizontal: 20),
+      decoration: ThemeManager.getCardDecoration(style),
+      child: Column(
+        children: [
+          Icon(Icons.emoji_events_outlined, size: 56, color: color),
+          const SizedBox(height: 12),
+          Text(
+            '全部首答正确',
+            style: theme.textTheme.titleLarge?.copyWith(
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            '没有需要回顾的错题',
+            style: theme.textTheme.bodyMedium?.copyWith(
+              color: ThemeManager.getSecondaryTextColor(style),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// 操作区：一个主按钮，其余为次要操作。
+class _Actions extends StatelessWidget {
+  final int wrongCount;
+  final ThemeStyle style;
+  final VoidCallback onPracticeWrong;
+  final VoidCallback onNext;
+  final VoidCallback onHistory;
+  final VoidCallback onHome;
+
+  const _Actions({
+    required this.wrongCount,
+    required this.style,
+    required this.onPracticeWrong,
+    required this.onNext,
+    required this.onHistory,
+    required this.onHome,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    const height = 56.0;
+    final wrong = ThemeManager.getWrongColor(style);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        if (wrongCount > 0) ...[
+          SizedBox(
+            height: height,
+            child: FilledButton.icon(
+              onPressed: onPracticeWrong,
+              style: FilledButton.styleFrom(
+                backgroundColor: wrong,
+                foregroundColor: Colors.white,
+              ),
+              icon: const Icon(Icons.replay_rounded),
+              label: Text('只练错题 · $wrongCount 词'),
+            ),
+          ),
+          const SizedBox(height: 12),
+        ],
+        SizedBox(
+          height: height,
+          child: wrongCount > 0
+              ? OutlinedButton.icon(
+                  onPressed: onNext,
+                  icon: const Icon(Icons.arrow_forward_rounded),
+                  label: const Text('继续下一组'),
+                )
+              : FilledButton.icon(
+                  onPressed: onNext,
+                  icon: const Icon(Icons.arrow_forward_rounded),
+                  label: const Text('继续下一组'),
+                ),
+        ),
+        const SizedBox(height: 8),
+        Row(
+          children: [
+            Expanded(
+              child: TextButton.icon(
+                onPressed: onHistory,
+                icon: const Icon(Icons.insights_outlined),
+                label: const Text('每日档案'),
+              ),
+            ),
+            Expanded(
+              child: TextButton.icon(
+                onPressed: onHome,
+                icon: const Icon(Icons.home_outlined),
+                label: const Text('回到首页'),
+              ),
+            ),
+          ],
+        ),
+      ],
+    );
   }
 }
 

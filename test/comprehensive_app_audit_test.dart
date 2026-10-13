@@ -201,26 +201,27 @@ void main() {
       await tester.pump(const Duration(milliseconds: 100));
 
       // 3. 验证结算界面关键指标与展示
-      expect(find.text('测试总结'), findsOneWidget);
-      expect(find.textContaining('待巩固 1 词，已保留到下一组优先安排'), findsOneWidget);
-      expect(find.textContaining('尾部没有足够的间隔题'), findsOneWidget);
-      expect(find.textContaining('达到重测／总作答上限'), findsOneWidget);
-      expect(find.text('准确率'), findsOneWidget);
+      expect(find.text('本轮完成'), findsOneWidget);
+      expect(find.text('1 词待巩固，已排到下一组优先复习'), findsOneWidget);
+      expect(find.text('首答正确率'), findsOneWidget);
       expect(find.text('67%'), findsOneWidget); // 四舍五入百分比展示
-      expect(find.text('总题数'), findsOneWidget);
-      expect(find.text('3'), findsOneWidget);
-      expect(find.text('正确'), findsOneWidget);
-      expect(find.text('2'), findsOneWidget);
-      expect(find.text('错误'), findsOneWidget);
-      expect(find.text('1'), findsOneWidget);
+      // 首答 2 / 3 词正确，答错 1。
+      expect(
+        find.byWidgetPredicate(
+          (w) => w is RichText && w.text.toPlainText() == '2 / 3 词',
+        ),
+        findsOneWidget,
+      );
+      expect(find.text('答错'), findsOneWidget);
 
       // 4. 验证错词列表中展示了错词 brilliant
-      expect(find.text('错题回顾 (1)'), findsOneWidget);
+      expect(find.text('错题回顾 · 1'), findsOneWidget);
       expect(find.text('brilliant'), findsOneWidget);
 
-      // 5. 验证操作闭环按钮：再测一次与错题专练
-      expect(find.text('重新测试'), findsOneWidget);
-      expect(find.text('只练错题 (1 词)'), findsOneWidget);
+      // 5. 验证操作闭环按钮：继续下一组与错题专练（在列表底部）
+      await tester.scrollUntilVisible(find.text('继续下一组'), 300);
+      expect(find.text('继续下一组'), findsOneWidget);
+      expect(find.text('只练错题 · 1 词'), findsOneWidget);
     });
   });
 
