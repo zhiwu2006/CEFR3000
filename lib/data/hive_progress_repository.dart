@@ -5,6 +5,7 @@ import 'package:hive/hive.dart';
 import '../models/models.dart';
 import '../domain/srs.dart';
 import '../features/progress/domain/memory_analytics.dart';
+import '../features/progress/domain/study_streak.dart';
 import '../features/memory/domain/learning_item_state.dart';
 import 'progress_repository.dart';
 import 'review_commit_repository.dart';
@@ -642,8 +643,7 @@ class HiveProgressRepository
       totalDurationMs = attemptDurationSum;
     }
 
-    // 计算连续学习天数 (使用优化后的宽松算法)
-    int streakDays = _calculateStreakDays(testRuns);
+    final streak = StudyStreak.fromRuns(testRuns);
 
     debugPrint(
       'Learning stats detail: totalCards=$totalCards mastered=$masteredCards '
@@ -691,7 +691,7 @@ class HiveProgressRepository
       'independentDueSuccessCount': independentDueEvents
           .where((event) => event.isSuccessful)
           .length,
-      'streakDays': streakDays,
+      ...streak.toJson(),
       ...MemoryAnalytics.summarize(committedEvents),
     });
 
@@ -839,57 +839,6 @@ class HiveProgressRepository
       'mastered': mastered,
       'notStarted': total - learned,
     };
-  }
-
-  /// 计算连续学习天数
-  int _calculateStreakDays(List<TestRun> testRuns) {
-    if (testRuns.isEmpty) return 0;
-
-    // 按日期分组（只考虑日期，不考虑时间）
-    final daySet = <String>{};
-    for (final run in testRuns) {
-      // 优化：只要开始了测试就算打卡，不要求必须 finished
-      // 这更能鼓励用户，防止因意外中断导致断签
-      final dateStr = run.startedAt.toIso8601String().substring(0, 10);
-      daySet.add(dateStr);
-    }
-
-    if (daySet.isEmpty) return 0;
-
-    // 转换为日期列表并排序
-    final dates = daySet.map((str) => DateTime.parse(str)).toList();
-    dates.sort((a, b) => b.compareTo(a)); // 降序排列
-
-    // 计算连续天数
-    int streak = 0;
-    DateTime? lastDate;
-
-    for (final date in dates) {
-      if (lastDate == null) {
-        // 第一天
-        final today = DateTime.now();
-        final todayDate = DateTime(today.year, today.month, today.day);
-        final currentDate = DateTime(date.year, date.month, date.day);
-
-        // 如果不是今天或昨天，连续天数为0
-        final daysDiff = todayDate.difference(currentDate).inDays;
-        if (daysDiff > 1) break;
-
-        streak = 1;
-        lastDate = date;
-      } else {
-        // 检查是否连续
-        final daysDiff = lastDate.difference(date).inDays;
-        if (daysDiff == 1) {
-          streak++;
-          lastDate = date;
-        } else {
-          break;
-        }
-      }
-    }
-
-    return streak;
   }
 
   @override

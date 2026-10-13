@@ -7,6 +7,7 @@ import '../../domain/srs.dart';
 import '../../features/lexicon/domain/lexicon_models.dart';
 import '../../features/memory/domain/learning_item_state.dart';
 import '../../features/progress/domain/memory_analytics.dart';
+import '../../features/progress/domain/study_streak.dart';
 import '../../models/models.dart';
 import '../exposure_repository.dart';
 import '../learning_item_state_repository.dart';
@@ -1020,7 +1021,7 @@ class SqliteProgressRepository
       'independentDueSuccessCount': independentDue
           .where((event) => event.isSuccessful)
           .length,
-      'streakDays': _calculateStreakDays(events),
+      ...StudyStreak.fromRuns(runs).toJson(),
       ...MemoryAnalytics.summarize(events),
     };
   }
@@ -1354,23 +1355,4 @@ class SqliteProgressRepository
       '${date.year.toString().padLeft(4, '0')}-'
       '${date.month.toString().padLeft(2, '0')}-'
       '${date.day.toString().padLeft(2, '0')}';
-
-  int _calculateStreakDays(List<ReviewEvent> events) {
-    final dates = events
-        .map((event) => event.localDate)
-        .where((d) => d.isNotEmpty)
-        .toSet();
-    if (dates.isEmpty) return 0;
-    final sorted = dates.map(DateTime.parse).toList()
-      ..sort((a, b) => b.compareTo(a));
-    final today = DateTime.now();
-    final todayDate = DateTime(today.year, today.month, today.day);
-    if (todayDate.difference(sorted.first).inDays > 1) return 0;
-    var streak = 1;
-    for (var i = 1; i < sorted.length; i++) {
-      if (sorted[i - 1].difference(sorted[i]).inDays != 1) break;
-      streak++;
-    }
-    return streak;
-  }
 }
