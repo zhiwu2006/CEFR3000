@@ -3,6 +3,11 @@ main = "src/index.js"
 compatibility_date = "2026-09-01"
 workers_dev = true
 
+# *.workers.dev 在部分网络下被 DNS 污染，设备通过自定义域名访问。
+routes = [
+  { pattern = "wpsync.tywg001.top", custom_domain = true },
+]
+
 # 部署前用 `wrangler d1 create vocab-flash-sync` 创建数据库，把返回的 database_id 填到这里。
 [[d1_databases]]
 binding = "DB"

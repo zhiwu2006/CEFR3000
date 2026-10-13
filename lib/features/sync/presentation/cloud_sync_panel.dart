@@ -47,7 +47,7 @@ class _CloudSyncPanelState extends ConsumerState<CloudSyncPanel> {
           autocorrect: false,
           decoration: const InputDecoration(
             labelText: 'Worker 地址',
-            hintText: 'https://vocab-flash-sync.xxx.workers.dev',
+            hintText: 'https://sync.example.com',
             border: OutlineInputBorder(),
           ),
         ),
