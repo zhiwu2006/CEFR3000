@@ -323,7 +323,12 @@ class RecallCommitService {
                 1 => RecallRating.forgot,
                 3 => RecallRating.difficult,
                 4 => RecallRating.recalled,
-                _ => RecallRating.easy,
+                // 四选一有 25% 蒙对概率，快速选对不足以证明“轻松回忆”；
+                // easy 留给需要自己写出/说出答案的题型。
+                _ =>
+                  taskType == ReviewTaskType.recognition
+                      ? RecallRating.recalled
+                      : RecallRating.easy,
               });
     return RecallEvidence(
       eventId: eventId,

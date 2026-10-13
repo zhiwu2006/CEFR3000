@@ -32,11 +32,14 @@ class MemoryScheduler {
       countFailureAsLongTerm: !evidence.isInSessionRetry,
       config: config,
     );
-    // 只用客观题的有效作答更新个人速度基线；自评回忆的停留时间不能
-    // 与限时选择题混在一起，否则后续“慢答”阈值会失真。
+    // 只用客观题的独立作答更新个人速度基线：自评回忆的停留时间、会话内
+    // 重测（刚看过答案）和用过提示的作答都比真实回忆快或慢得多，混进来会
+    // 让后续“快答/慢答”阈值失真。
     if (evidence.source == EvaluationSource.objective &&
         evidence.activeDurationMs > 0 &&
-        evidence.rating != RecallRating.forgot) {
+        evidence.rating != RecallRating.forgot &&
+        evidence.isIndependentRecall &&
+        !evidence.isInSessionRetry) {
       final nextRtP50 = current.rtP50 <= 0
           ? evidence.activeDurationMs
           : ((current.rtP50 * 0.7) + (evidence.activeDurationMs * 0.3)).round();

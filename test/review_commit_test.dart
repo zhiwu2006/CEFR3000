@@ -111,7 +111,8 @@ void main() {
     final reopened = HiveProgressRepository(_Words());
     await reopened.init();
     final persisted = (await reopened.getReviewEvents()).single;
-    expect(persisted.rating, 'easy');
+    // 四选一快速选对封顶为 recalled，easy 留给产出类题型。
+    expect(persisted.rating, 'recalled');
     expect(persisted.timeLimitMs, 2000);
     expect(persisted.localDate, '2026-09-11');
     expect((await reopened.getExposureEvents()).length, 1);
