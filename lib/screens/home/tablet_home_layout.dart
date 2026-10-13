@@ -7,6 +7,7 @@ import '../../session/session_models.dart';
 import '../../theme/theme_manager.dart';
 import '../../theme/theme_style.dart';
 import 'learning_record_widgets.dart';
+import '../../features/sync/presentation/sync_status_badge.dart';
 
 /// 平板首页：左侧导航栏 + 学习记录主区域 + 今日行动栏。
 ///
@@ -450,14 +451,20 @@ class _ActionPanel extends ConsumerWidget {
 
     if (horizontal) {
       return Padding(
-        padding: const EdgeInsets.fromLTRB(24, 24, 24, 0),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
+        padding: const EdgeInsets.fromLTRB(24, 16, 24, 0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.end,
           children: [
-            for (var i = 0; i < cards.length; i++) ...[
-              if (i > 0) const SizedBox(width: 12),
-              Expanded(child: cards[i]),
-            ],
+            SyncStatusBadge(color: secondary),
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                for (var i = 0; i < cards.length; i++) ...[
+                  if (i > 0) const SizedBox(width: 12),
+                  Expanded(child: cards[i]),
+                ],
+              ],
+            ),
           ],
         ),
       );
@@ -476,7 +483,14 @@ class _ActionPanel extends ConsumerWidget {
           _today(),
           style: theme.textTheme.bodySmall?.copyWith(color: secondary),
         ),
-        const SizedBox(height: 16),
+        Align(
+          alignment: Alignment.centerLeft,
+          child: Transform.translate(
+            offset: const Offset(-8, 0),
+            child: SyncStatusBadge(color: secondary),
+          ),
+        ),
+        const SizedBox(height: 8),
         for (final card in cards) ...[card, const SizedBox(height: 12)],
       ],
     );

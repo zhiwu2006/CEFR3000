@@ -10,6 +10,7 @@ import '../session/session_models.dart';
 import 'active_recall_screen.dart';
 import 'production_recall_screen.dart';
 import 'home/tablet_home_layout.dart';
+import '../features/sync/presentation/sync_status_badge.dart';
 
 /// 主页面 - 支持多主题风格
 class HomeScreen extends ConsumerWidget {
@@ -57,6 +58,16 @@ class HomeScreen extends ConsumerWidget {
                     theme,
                     themeStyle,
                     headerTextColor,
+                  ),
+
+                  Align(
+                    alignment: Alignment.centerRight,
+                    child: Padding(
+                      padding: const EdgeInsets.only(right: 12),
+                      child: SyncStatusBadge(
+                        color: ThemeManager.getSecondaryTextColor(themeStyle),
+                      ),
+                    ),
                   ),
 
                   // 主要内容

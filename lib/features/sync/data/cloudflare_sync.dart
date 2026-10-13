@@ -116,6 +116,7 @@ class CloudflareSyncRemote implements SyncRemote {
 class CloudSyncConfigStore {
   static const _urlKey = 'cloud_sync_url';
   static const _tokenKey = 'vocab_flash.sync.token';
+  static const _lastSyncedKey = 'cloud_sync_last_at';
 
   final Future<SharedPreferences> Function() _prefs;
   final CredentialStore _credentials;
@@ -129,6 +130,14 @@ class CloudSyncConfigStore {
 
   Future<String?> readToken() => _credentials.read(_tokenKey);
 
+  Future<DateTime?> readLastSynced() async {
+    final raw = (await _prefs()).getString(_lastSyncedKey);
+    return raw == null ? null : DateTime.tryParse(raw);
+  }
+
+  Future<void> saveLastSynced(DateTime at) async =>
+      (await _prefs()).setString(_lastSyncedKey, at.toIso8601String());
+
   Future<void> save(Uri url, String token) async {
     await _credentials.write(_tokenKey, token);
     await (await _prefs()).setString(_urlKey, url.toString());
@@ -136,6 +145,7 @@ class CloudSyncConfigStore {
 
   Future<void> clear() async {
     await (await _prefs()).remove(_urlKey);
+    await (await _prefs()).remove(_lastSyncedKey);
     await _credentials.delete(_tokenKey);
   }
 }
@@ -147,12 +157,16 @@ class CloudSyncState {
   final String? error;
   final SyncReport? lastReport;
 
+  /// 最近一次成功同步的时间（跨重启保留）。
+  final DateTime? lastSyncedAt;
+
   const CloudSyncState({
     this.url,
     this.busy = false,
     this.message,
     this.error,
     this.lastReport,
+    this.lastSyncedAt,
   });
 
   bool get configured => url != null;
@@ -163,6 +177,7 @@ class CloudSyncState {
     String? message,
     String? error,
     SyncReport? lastReport,
+    DateTime? lastSyncedAt,
     bool clearMessages = false,
   }) => CloudSyncState(
     url: url ?? this.url,
@@ -170,6 +185,7 @@ class CloudSyncState {
     message: clearMessages ? message : message ?? this.message,
     error: clearMessages ? error : error ?? this.error,
     lastReport: lastReport ?? this.lastReport,
+    lastSyncedAt: lastSyncedAt ?? this.lastSyncedAt,
   );
 }
 
@@ -185,7 +201,10 @@ class CloudSyncController extends StateNotifier<CloudSyncState> {
   Future<void> _restore() async {
     try {
       final url = await _config.readUrl();
-      if (url != null && mounted) state = state.copyWith(url: url);
+      final lastSynced = await _config.readLastSynced();
+      if (url != null && mounted) {
+        state = state.copyWith(url: url, lastSyncedAt: lastSynced);
+      }
     } catch (error) {
       debugPrint('Cloud sync config unavailable: $error');
     }
@@ -300,8 +319,11 @@ class CloudSyncController extends StateNotifier<CloudSyncState> {
     if (token == null) return null;
 
     _syncing = true;
-    if (!quiet && mounted) {
-      state = state.copyWith(busy: true, clearMessages: true);
+    if (mounted) {
+      // 后台同步也标记 busy，首页状态才能显示「同步中」；只有手动同步清掉旧提示。
+      state = quiet
+          ? state.copyWith(busy: true)
+          : state.copyWith(busy: true, clearMessages: true);
     }
     final remote = CloudflareSyncRemote(baseUri: url, token: token);
     try {
@@ -318,11 +340,14 @@ class CloudSyncController extends StateNotifier<CloudSyncState> {
         _ref.invalidate(todayRecognitionPlanProvider);
         _ref.invalidate(todayDeckProvider);
       }
+      await _config.saveLastSynced(report.finishedAt);
       if (mounted) {
         state = state.copyWith(
           url: url,
           busy: false,
           lastReport: report,
+          lastSyncedAt: report.finishedAt,
+          clearMessages: true,
           message: '同步完成',
         );
       }
