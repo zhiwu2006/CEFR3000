@@ -932,14 +932,33 @@ class _TestScreenState extends ConsumerState<TestScreen>
                           ),
                           const SizedBox(height: 32),
                           Expanded(
-                            child: SingleChildScrollView(
-                              child: _buildOptionButtons(
-                                context,
-                                theme,
-                                data,
-                                activeQuestion,
-                                themeStyle,
-                              ),
+                            child: LayoutBuilder(
+                              builder: (context, box) {
+                                // 选项按可用高度平分，单个 76~128dp，间距 20dp。
+                                const gap = 20.0;
+                                final count = activeQuestion.options.length;
+                                final height =
+                                    ((box.maxHeight - gap * (count - 1)) /
+                                            count)
+                                        .clamp(76.0, 128.0);
+                                final options = _buildOptionButtons(
+                                  context,
+                                  theme,
+                                  data,
+                                  activeQuestion,
+                                  themeStyle,
+                                  optionHeight: height,
+                                  gap: gap,
+                                );
+                                final needed =
+                                    height * count + gap * (count - 1);
+                                return needed <= box.maxHeight
+                                    ? Align(
+                                        alignment: Alignment.topCenter,
+                                        child: options,
+                                      )
+                                    : SingleChildScrollView(child: options);
+                              },
                             ),
                           ),
                         ],
@@ -1263,22 +1282,30 @@ class _TestScreenState extends ConsumerState<TestScreen>
     );
   }
 
+  /// [optionHeight] 不为空时（平板）每个选项固定高度、选项间留 [gap]，
+  /// 文字放大，减少相邻选项误触。
   Widget _buildOptionButtons(
     BuildContext context,
     ThemeData theme,
     SessionData sessionData,
     Question question,
-    ThemeStyle themeStyle,
-  ) {
-    return Column(
+    ThemeStyle themeStyle, {
+    double? optionHeight,
+    double gap = 0,
+  }) {
+    final large = optionHeight != null;
+    final column = Column(
       mainAxisSize: MainAxisSize.min,
-      children: List.generate(
-        question.options.length,
-        (index) => OptionButton(
+      children: List.generate(question.options.length, (index) {
+        final button = OptionButton(
           text: question.options[index],
           label: ['A', 'B', 'C', 'D'][index],
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
-          margin: const EdgeInsets.symmetric(horizontal: 2, vertical: 4),
+          padding: large
+              ? const EdgeInsets.symmetric(horizontal: 24)
+              : const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+          margin: large
+              ? EdgeInsets.zero
+              : const EdgeInsets.symmetric(horizontal: 2, vertical: 6),
           isSelected: sessionData.selectedOption == index,
           isCorrect:
               sessionData.state == SessionState.resolved &&
@@ -1294,8 +1321,20 @@ class _TestScreenState extends ConsumerState<TestScreen>
                     .read(sessionControllerProvider.notifier)
                     .selectOption(index)
               : null,
-        ),
-      ),
+        );
+        if (!large) return button;
+        return Padding(
+          padding: EdgeInsets.only(top: index == 0 ? 0 : gap),
+          child: SizedBox(height: optionHeight, child: button),
+        );
+      }),
+    );
+    if (!large) return column;
+    return MediaQuery(
+      data: MediaQuery.of(
+        context,
+      ).copyWith(textScaler: const TextScaler.linear(1.2)),
+      child: column,
     );
   }
 
