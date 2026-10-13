@@ -25,6 +25,11 @@ class SessionSettings {
   @HiveField(5)
   final String learningMode;
 
+  /// 新词第一次出现先看学习卡，隔几题再考。
+  @HiveField(6, defaultValue: true)
+  @JsonKey(defaultValue: true)
+  final bool studyNewWords;
+
   const SessionSettings({
     this.selectedLevels = const ['A1'],
     this.wordsPerSession = 100,
@@ -32,6 +37,7 @@ class SessionSettings {
     this.orderPolicy = 'random',
     this.onlyLeeches = false,
     this.learningMode = 'standard',
+    this.studyNewWords = true,
   });
 
   Set<String> get selectedLevelsSet => selectedLevels.toSet();
@@ -43,6 +49,7 @@ class SessionSettings {
     String? orderPolicy,
     bool? onlyLeeches,
     String? learningMode,
+    bool? studyNewWords,
   }) {
     return SessionSettings(
       selectedLevels: selectedLevels ?? this.selectedLevels,
@@ -51,6 +58,7 @@ class SessionSettings {
       orderPolicy: orderPolicy ?? this.orderPolicy,
       onlyLeeches: onlyLeeches ?? this.onlyLeeches,
       learningMode: learningMode ?? this.learningMode,
+      studyNewWords: studyNewWords ?? this.studyNewWords,
     );
   }
 

@@ -577,4 +577,69 @@ void main() {
       await tester.pump(const Duration(milliseconds: 300));
     },
   );
+
+  group('new word study mode', () {
+    testWidgets('new words show a study card first, then a 5s question', (
+      tester,
+    ) async {
+      final repo = _Progress();
+      final c = _controller(tester, repo);
+      try {
+        await c.startSession(config().copyWith(studyNewWords: true));
+        expect(c.state.state, SessionState.studying);
+        final first = c.state.currentQuestion!.word.id;
+        expect(c.state.attempts, isEmpty);
+
+        // 学完的词插回队列，隔 3 张卡后才考：先轮到其它新词的学习卡。
+        final studied = <int>[first];
+        for (var i = 0; i < 3; i++) {
+          await c.finishStudyCard();
+          expect(c.state.state, SessionState.studying);
+          studied.add(c.state.currentQuestion!.word.id);
+        }
+        expect(studied.toSet().length, 4);
+
+        await c.finishStudyCard();
+        expect(c.state.state, SessionState.waiting);
+        expect(c.state.currentQuestion!.word.id, first);
+        expect(
+          c.state.currentTimeLimitMs,
+          SessionController.newWordTimeLimitMs,
+        );
+        expect(c.state.millisLeft, SessionController.newWordTimeLimitMs);
+      } finally {
+        c.dispose();
+      }
+    });
+
+    testWidgets('known words skip the card and keep the normal limit', (
+      tester,
+    ) async {
+      final repo = _Progress();
+      for (final id in [1, 2, 3, 4]) {
+        repo.cards[id] = CardState.newCard(id);
+      }
+      final c = _controller(tester, repo);
+      try {
+        await c.startSession(config().copyWith(studyNewWords: true));
+        expect(c.state.state, SessionState.waiting);
+        expect(c.state.currentTimeLimitMs, 2000);
+      } finally {
+        c.dispose();
+      }
+    });
+
+    testWidgets('turning the setting off asks new words right away', (
+      tester,
+    ) async {
+      final c = _controller(tester, _Progress());
+      try {
+        await c.startSession(config());
+        expect(c.state.state, SessionState.waiting);
+        expect(c.state.currentTimeLimitMs, 2000);
+      } finally {
+        c.dispose();
+      }
+    });
+  });
 }

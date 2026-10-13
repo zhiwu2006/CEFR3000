@@ -220,6 +220,8 @@ class _TestScreenState extends ConsumerState<TestScreen>
       case SessionState.idle:
       case SessionState.presenting:
         return _buildLoadingState(theme, themeStyle);
+      case SessionState.studying:
+        return _buildStudyState(context, theme, sessionData, themeStyle);
       case SessionState.waiting:
       case SessionState.resolved:
         return _buildTestingState(
@@ -292,6 +294,112 @@ class _TestScreenState extends ConsumerState<TestScreen>
                   color: textColor,
                   fontWeight: FontWeight.w600,
                 ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// 新词学习卡：先看清词义，点继续后隔几题再考，不计时、不计分。
+  Widget _buildStudyState(
+    BuildContext context,
+    ThemeData theme,
+    SessionData sessionData,
+    ThemeStyle themeStyle,
+  ) {
+    final question = sessionData.currentQuestion;
+    if (question == null) return _buildLoadingState(theme, themeStyle);
+    final word = question.word;
+    final isTablet = MediaQuery.sizeOf(context).shortestSide >= 600;
+    final textColor = ThemeManager.getTextColor(themeStyle);
+    final secondary = ThemeManager.getSecondaryTextColor(themeStyle);
+    final controller = ref.read(sessionControllerProvider.notifier);
+
+    return Center(
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 640),
+        child: SingleChildScrollView(
+          padding: EdgeInsets.all(isTablet ? 32 : 20),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text(
+                '新词 · 先记一下，稍后再考',
+                textAlign: TextAlign.center,
+                style: theme.textTheme.labelLarge?.copyWith(color: secondary),
+              ),
+              const SizedBox(height: 16),
+              _buildWordDisplay(
+                context,
+                theme,
+                null,
+                question,
+                themeStyle,
+                isTablet: isTablet,
+              ),
+              const SizedBox(height: 20),
+              Container(
+                padding: const EdgeInsets.all(20),
+                decoration: ThemeManager.getCardDecoration(themeStyle),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      '释义',
+                      style: theme.textTheme.labelMedium?.copyWith(
+                        color: secondary,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    for (var i = 0; i < word.cnDefs.length; i++)
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 6),
+                        child: Text(
+                          word.cnDefs.length > 1
+                              ? '${i + 1}. ${word.cnDefs[i]}'
+                              : word.cnDefs[i],
+                          style:
+                              (isTablet
+                                      ? theme.textTheme.titleLarge
+                                      : theme.textTheme.titleMedium)
+                                  ?.copyWith(color: textColor),
+                        ),
+                      ),
+                    if (word.cnDefs.isEmpty)
+                      Text(
+                        '暂无释义',
+                        style: theme.textTheme.bodyMedium?.copyWith(
+                          color: secondary,
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 24),
+              Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      onPressed: () =>
+                          ref.read(ttsServiceProvider).speak(word.headword),
+                      icon: const Icon(Icons.volume_up_outlined),
+                      label: const Text('再听一遍'),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    flex: 2,
+                    child: FilledButton(
+                      onPressed: sessionData.isPaused
+                          ? null
+                          : controller.finishStudyCard,
+                      child: const Text('记住了，继续'),
+                    ),
+                  ),
+                ],
               ),
             ],
           ),
@@ -553,7 +661,7 @@ class _TestScreenState extends ConsumerState<TestScreen>
                                     SizedBox(height: contentGap),
                                     // 紧凑环形倒计时
                                     _CountdownRingConsumer(
-                                      totalTimeMs: data.config.timeLimitMs,
+                                      totalTimeMs: data.currentTimeLimitMs,
                                       size: 56,
                                       themeStyle: themeStyle,
                                     ),
@@ -817,7 +925,7 @@ class _TestScreenState extends ConsumerState<TestScreen>
                       child: Column(
                         children: [
                           _CountdownRingConsumer(
-                            totalTimeMs: data.config.timeLimitMs,
+                            totalTimeMs: data.currentTimeLimitMs,
                             size: 120,
                             themeStyle: themeStyle,
                           ),

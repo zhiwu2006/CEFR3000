@@ -96,6 +96,7 @@ class AppSettings {
   int get timeLimitMs => session.timeLimitMs;
   String get orderPolicy => session.orderPolicy;
   bool get onlyLeeches => session.onlyLeeches;
+  bool get studyNewWords => session.studyNewWords;
   LearningMode get learningMode => _parseLearningMode(session.learningMode);
 
   // Theme

@@ -970,6 +970,21 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     );
   }
 
+  Widget _buildStudyNewWordsSwitch(
+    BuildContext context,
+    WidgetRef ref,
+    AppSettings settings,
+  ) {
+    return SwitchListTile(
+      title: const Text('新词先学再测'),
+      subtitle: const Text('新词第一次出现先看释义，隔几题再考；首次作答时限放宽到 5 秒'),
+      value: settings.studyNewWords,
+      onChanged: (value) {
+        ref.read(appSettingsProvider.notifier).updateStudyNewWords(value);
+      },
+    );
+  }
+
   Widget _buildTtsAutoPlaySwitch(
     BuildContext context,
     WidgetRef ref,
@@ -2113,6 +2128,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
           _buildLevelSelector(context, ref, settings),
           _buildWordsPerSessionSlider(context, ref, settings),
           _buildTimeLimitSlider(context, ref, settings),
+          _buildStudyNewWordsSwitch(context, ref, settings),
           _buildSlowThresholdSlider(context, ref, settings),
           _buildNewCardRatioSlider(context, ref, settings),
           _buildDailyNewLimitSlider(context, ref, settings),
@@ -2223,6 +2239,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
               _buildLevelSelector(context, ref, settings),
               _buildWordsPerSessionSlider(context, ref, settings),
               _buildTimeLimitSlider(context, ref, settings),
+              _buildStudyNewWordsSwitch(context, ref, settings),
               _buildSlowThresholdSlider(context, ref, settings),
               _buildNewCardRatioSlider(context, ref, settings),
               _buildDailyNewLimitSlider(context, ref, settings),

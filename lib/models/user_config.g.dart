@@ -23,13 +23,14 @@ class SessionSettingsAdapter extends TypeAdapter<SessionSettings> {
       orderPolicy: fields[3] as String,
       onlyLeeches: fields[4] as bool,
       learningMode: fields[5] as String,
+      studyNewWords: fields[6] == null ? true : fields[6] as bool,
     );
   }
 
   @override
   void write(BinaryWriter writer, SessionSettings obj) {
     writer
-      ..writeByte(6)
+      ..writeByte(7)
       ..writeByte(0)
       ..write(obj.selectedLevels)
       ..writeByte(1)
@@ -41,7 +42,9 @@ class SessionSettingsAdapter extends TypeAdapter<SessionSettings> {
       ..writeByte(4)
       ..write(obj.onlyLeeches)
       ..writeByte(5)
-      ..write(obj.learningMode);
+      ..write(obj.learningMode)
+      ..writeByte(6)
+      ..write(obj.studyNewWords);
   }
 
   @override
@@ -301,6 +304,7 @@ SessionSettings _$SessionSettingsFromJson(Map<String, dynamic> json) =>
       orderPolicy: json['orderPolicy'] as String? ?? 'random',
       onlyLeeches: json['onlyLeeches'] as bool? ?? false,
       learningMode: json['learningMode'] as String? ?? 'standard',
+      studyNewWords: json['studyNewWords'] as bool? ?? true,
     );
 
 Map<String, dynamic> _$SessionSettingsToJson(SessionSettings instance) =>
@@ -311,6 +315,7 @@ Map<String, dynamic> _$SessionSettingsToJson(SessionSettings instance) =>
       'orderPolicy': instance.orderPolicy,
       'onlyLeeches': instance.onlyLeeches,
       'learningMode': instance.learningMode,
+      'studyNewWords': instance.studyNewWords,
     };
 
 ThemeSettings _$ThemeSettingsFromJson(Map<String, dynamic> json) =>

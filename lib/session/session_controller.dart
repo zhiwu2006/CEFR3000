@@ -32,6 +32,16 @@ class SessionController extends StateNotifier<SessionData> {
   late RecallCommitService _recallCommitService;
   final Set<String> _committedEventIds = <String>{};
   final Set<int> _consumedNewWordIds = <int>{};
+
+  /// 本轮开始前从没有学习记录的词：首次出现先看学习卡，作答时限放宽。
+  final Set<int> _newWordIds = <int>{};
+  final Set<int> _studiedWordIds = <int>{};
+
+  /// 每次作答实际使用的时限，提交时用它评快答/慢答。
+  final Map<String, int> _attemptTimeLimits = <String, int>{};
+
+  /// 新词首次作答的最短时限：2 秒四选一对生词偏紧，超时多半是来不及读题。
+  static const newWordTimeLimitMs = 5000;
   final bool _consumeNewOnSelection;
   final Clock _clock;
   final Future<void> Function(int) _consumeDailyNew;
@@ -136,6 +146,7 @@ class SessionController extends StateNotifier<SessionData> {
       _cancelFeedback();
       _committedEventIds.clear();
       _consumedNewWordIds.clear();
+      _resetNewWordTracking();
       debugPrint('=== Starting session with config: $config');
       _recallCommitService = RecallCommitService(
         progressRepository: _progressRepository,
@@ -380,6 +391,7 @@ class SessionController extends StateNotifier<SessionData> {
           (word) => !pendingConsolidation.contains(word.id),
         ),
       ];
+      await _loadNewWordIds(availableWords);
       debugPrint('Using ${availableWords.length} words for test');
 
       if (availableWords.isEmpty) {
@@ -503,6 +515,43 @@ class SessionController extends StateNotifier<SessionData> {
     );
   }
 
+  /// 学习卡看完：把这个词插回主队列，隔 [DelayedReplayManager.minRetryGap]
+  /// 道题再考，检验的是短时记忆而不是刚看完就选。
+  Future<void> finishStudyCard() async {
+    if (_isPaused ||
+        state.state != SessionState.studying ||
+        state.currentQuestion == null) {
+      return;
+    }
+    final word = state.currentQuestion!.word;
+    _studiedWordIds.add(word.id);
+    final queue = List<Word>.from(state.mainQueue);
+    queue.insert(min(DelayedReplayManager.minRetryGap, queue.length), word);
+    state = state.copyWith(state: SessionState.presenting, mainQueue: queue);
+    await _presentNextQuestion();
+  }
+
+  void _resetNewWordTracking() {
+    _newWordIds.clear();
+    _studiedWordIds.clear();
+    _attemptTimeLimits.clear();
+  }
+
+  Future<void> _loadNewWordIds(List<Word> words) async {
+    _newWordIds.clear();
+    if (words.isEmpty) return;
+    try {
+      final ids = words.map((word) => word.id).toList();
+      final known = (await _progressRepository.getCardStates(
+        ids,
+      )).map((cardState) => cardState.wordId).toSet();
+      _newWordIds.addAll(ids.where((id) => !known.contains(id)));
+    } catch (error) {
+      // 读不到历史时按熟词处理：只是少了学习卡，不影响作答与提交。
+      debugPrint('Unable to load card states for new words: $error');
+    }
+  }
+
   /// 答题路径只更新内存；所有存储操作都在整轮结束后执行。
   Future<void> selectOption(int optionIndex) async {
     if (_isPaused ||
@@ -523,7 +572,7 @@ class SessionController extends StateNotifier<SessionData> {
       return;
     }
     _stopCountdown();
-    _resolveAttempt(_createAttempt(-1, state.config.timeLimitMs));
+    _resolveAttempt(_createAttempt(-1, state.currentTimeLimitMs));
   }
 
   void _resolveAttempt(Attempt attempt) {
@@ -603,12 +652,33 @@ class SessionController extends StateNotifier<SessionData> {
         correctIndex: questionData.correctIndex,
       );
 
+      final firstSight =
+          state.config.studyNewWords &&
+          _newWordIds.contains(nextWord.id) &&
+          !state.attempts.any((attempt) => attempt.wordId == nextWord.id);
+
+      // 新词第一次出现：先展示学习卡，看完再隔几题考（见 finishStudyCard）。
+      if (firstSight && !_studiedWordIds.contains(nextWord.id)) {
+        state = state.copyWith(
+          state: SessionState.studying,
+          currentQuestion: question,
+          selectedOption: -1,
+        );
+        _speakWord(nextWord.headword);
+        return;
+      }
+
+      final timeLimit = firstSight
+          ? max(state.config.timeLimitMs, newWordTimeLimitMs)
+          : state.config.timeLimitMs;
+
       // 更新状态到presenting，确保重置选中状态
       state = state.copyWith(
         state: SessionState.presenting,
         currentQuestion: question,
         selectedOption: -1, // 明确设置为-1表示未选中
-        millisLeft: state.config.timeLimitMs,
+        millisLeft: timeLimit,
+        questionTimeLimitMs: timeLimit,
         questionStartTime: DateTime.now(),
       );
 
@@ -757,6 +827,10 @@ class SessionController extends StateNotifier<SessionData> {
       newQueue.shuffle(Random());
     }
 
+    // 上一轮已提交，这里通常不会再有新词；仍按存储重新判定，保持口径一致。
+    _resetNewWordTracking();
+    await _loadNewWordIds(newQueue);
+
     const uuid = Uuid();
     final sessionId = uuid.v4();
 
@@ -813,7 +887,8 @@ class SessionController extends StateNotifier<SessionData> {
     final receipt = await _recallCommitService.commitAttempt(
       sessionId: state.sessionId,
       attempt: attempt,
-      timeLimitMs: state.config.timeLimitMs,
+      timeLimitMs:
+          _attemptTimeLimits[_attemptKey(attempt)] ?? state.config.timeLimitMs,
       slowThreshold: state.config.slowThreshold,
       answerRevealed: attempt.highestHintLevel >= 3,
       hintUsed: attempt.usedHint,
@@ -869,7 +944,7 @@ class SessionController extends StateNotifier<SessionData> {
               ? AttemptResult.correct
               : AttemptResult.wrong);
 
-    return Attempt(
+    final attempt = Attempt(
       wordId: question.word.id,
       result: actualResult,
       rtMs: reactionTime,
@@ -880,6 +955,8 @@ class SessionController extends StateNotifier<SessionData> {
           ? AttemptKind.inSessionRetry
           : AttemptKind.initial,
     );
+    _attemptTimeLimits[_attemptKey(attempt)] = state.currentTimeLimitMs;
+    return attempt;
   }
 
   void _markRemainingDelayedAsUnresolved() {
@@ -912,7 +989,7 @@ class SessionController extends StateNotifier<SessionData> {
     state = state.copyWith(
       millisLeft: (_countdownInitialMs - elapsedMs).clamp(
         0,
-        state.config.timeLimitMs,
+        state.currentTimeLimitMs,
       ),
     );
   }
@@ -1075,7 +1152,8 @@ class SessionController extends StateNotifier<SessionData> {
   void pauseSession() {
     if (_isPaused ||
         (state.state != SessionState.waiting &&
-            state.state != SessionState.resolved)) {
+            state.state != SessionState.resolved &&
+            state.state != SessionState.studying)) {
       return;
     }
     debugPrint('Pausing session - current state: ${state.state}');

@@ -202,6 +202,7 @@ class SessionCheckpoint {
     'maxRetriesPerWord': config.maxRetriesPerWord,
     'maxTotalAttempts': config.maxTotalAttempts,
     'cooldownWindow': config.cooldownWindow,
+    'studyNewWords': config.studyNewWords,
     'plannedWordIds': config.plannedWordIds,
     'srsConfig': {
       'alphaStability': config.srsConfig.alphaStability,

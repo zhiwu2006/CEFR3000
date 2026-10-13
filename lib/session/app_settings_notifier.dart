@@ -258,6 +258,13 @@ class AppSettingsNotifier extends StateNotifier<AppSettings> {
     _debouncedSave();
   }
 
+  Future<void> updateStudyNewWords(bool enabled) async {
+    state = state.copyWith(
+      session: state.session.copyWith(studyNewWords: enabled),
+    );
+    _debouncedSave();
+  }
+
   Future<void> updateDelayProfile(DelayProfile profile) async {
     state = state.copyWith(delayProfile: profile);
     _debouncedSave();

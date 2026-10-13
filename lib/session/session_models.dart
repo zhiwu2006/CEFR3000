@@ -5,6 +5,7 @@ import '../domain/srs.dart';
 enum SessionState {
   idle, // 空闲
   presenting, // 展示题目
+  studying, // 新词学习卡：先看释义，不计时、不计分
   waiting, // 等待用户选择
   resolved, // 已解决（显示反馈）
   saving, // 全轮完成，统一保存
@@ -79,6 +80,10 @@ class SessionConfig {
   /// 今日计划已经选出的稳定顺序；为空时才使用兼容选词逻辑。
   final List<int>? plannedWordIds;
 
+  /// 新词学习模式：新词首次出现先看学习卡，首次作答时限放宽。
+  /// 默认关闭，由 [SessionConfig.fromAppSettings] 按用户设置开启。
+  final bool studyNewWords;
+
   const SessionConfig({
     required this.levels,
     required this.wordsPerSession,
@@ -99,6 +104,7 @@ class SessionConfig {
     this.maxTotalAttempts = 0,
     this.cooldownWindow = 5,
     this.plannedWordIds,
+    this.studyNewWords = false,
   });
 
   int get effectiveMaxTotalAttempts {
@@ -149,6 +155,7 @@ class SessionConfig {
     int? maxTotalAttempts,
     int? cooldownWindow,
     List<int>? plannedWordIds,
+    bool? studyNewWords,
   }) {
     return SessionConfig(
       levels: levels ?? this.levels,
@@ -170,6 +177,7 @@ class SessionConfig {
       maxTotalAttempts: maxTotalAttempts ?? this.maxTotalAttempts,
       cooldownWindow: cooldownWindow ?? this.cooldownWindow,
       plannedWordIds: plannedWordIds ?? this.plannedWordIds,
+      studyNewWords: studyNewWords ?? this.studyNewWords,
     );
   }
 
@@ -222,6 +230,7 @@ class SessionConfig {
       maxRetriesPerWord: 3,
       maxTotalAttempts: 0,
       cooldownWindow: 5,
+      studyNewWords: settings.studyNewWords,
     );
   }
 
@@ -255,6 +264,7 @@ class SessionConfig {
       maxRetriesPerWord: intValue('maxRetriesPerWord', 3).clamp(0, 20),
       maxTotalAttempts: intValue('maxTotalAttempts', 0).clamp(0, 10000),
       cooldownWindow: intValue('cooldownWindow', 5).clamp(0, 50),
+      studyNewWords: boolValue('studyNewWords', false),
       plannedWordIds: (json['plannedWordIds'] as List?)
           ?.whereType<num>()
           .map((value) => value.toInt())
@@ -320,7 +330,13 @@ class SessionData {
     this.retryCounts = const {},
     this.unresolvedWordIds = const {},
     this.consolidationWordIds = const {},
+    this.questionTimeLimitMs,
   }) : _totalWords = totalWords;
+
+  /// 当前这道题的时限；新词首次作答会比设置的时限更宽。
+  final int? questionTimeLimitMs;
+
+  int get currentTimeLimitMs => questionTimeLimitMs ?? config.timeLimitMs;
 
   /// 本轮目标总词数
   int get totalWords => _totalWords ?? config.wordsPerSession;
@@ -562,8 +578,9 @@ class SessionData {
       .toList(growable: false);
 
   /// 只计算倒计时实际消耗的时间，暂停或后台停留不会被计入。
-  int get activeReactionTimeMs =>
-      (config.timeLimitMs - millisLeft).clamp(0, config.timeLimitMs).toInt();
+  int get activeReactionTimeMs => (currentTimeLimitMs - millisLeft)
+      .clamp(0, currentTimeLimitMs)
+      .toInt();
 
   /// 复制并修改指定字段
   SessionData copyWith({
@@ -585,6 +602,7 @@ class SessionData {
     Map<int, int>? retryCounts,
     Set<int>? unresolvedWordIds,
     Set<int>? consolidationWordIds,
+    int? questionTimeLimitMs,
   }) => SessionData(
     state: state ?? this.state,
     mainQueue: mainQueue ?? this.mainQueue,
@@ -604,6 +622,7 @@ class SessionData {
     retryCounts: retryCounts ?? this.retryCounts,
     unresolvedWordIds: unresolvedWordIds ?? this.unresolvedWordIds,
     consolidationWordIds: consolidationWordIds ?? this.consolidationWordIds,
+    questionTimeLimitMs: questionTimeLimitMs ?? this.questionTimeLimitMs,
   );
 
   @override
