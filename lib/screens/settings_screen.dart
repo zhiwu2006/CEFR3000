@@ -643,11 +643,19 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
           final preset = LearningModePreset.getPreset(mode);
           final isSelected = settings.learningMode == mode;
 
+          // 选中卡片底色可能是深色（数码主题里 primaryContainer 为黑色），
+          // 文字和单选圈都要换成对应的前景色。
+          final onCard = isSelected
+              ? theme.colorScheme.onPrimaryContainer
+              : null;
           return Card(
             margin: const EdgeInsets.only(bottom: 8),
             elevation: isSelected ? 4 : 1,
             color: isSelected ? theme.colorScheme.primaryContainer : null,
             child: RadioListTile<LearningMode>(
+              fillColor: onCard == null
+                  ? null
+                  : WidgetStatePropertyAll<Color>(onCard),
               title: Row(
                 children: [
                   if (preset != null) ...[
@@ -658,6 +666,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                     child: Text(
                       preset?.name ?? '自定义模式',
                       style: TextStyle(
+                        color: onCard,
                         fontWeight: isSelected
                             ? FontWeight.bold
                             : FontWeight.normal,
@@ -691,9 +700,9 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                       '每轮: ${preset.wordsPerSession}词 | '
                       '新词: ${preset.dailyNewWords}个/天 (上限: ${preset.dailyNewLimit}) | '
                       '时间: ${preset.timeLimitMs}ms',
-                      style: theme.textTheme.bodySmall,
+                      style: theme.textTheme.bodySmall?.copyWith(color: onCard),
                     )
-                  : const Text('手动调整所有参数'),
+                  : Text('手动调整所有参数', style: TextStyle(color: onCard)),
               value: mode,
               groupValue: settings.learningMode,
               onChanged: (value) {
@@ -1705,7 +1714,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
               style: theme.textTheme.labelMedium?.copyWith(
                 fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
                 color: isSelected
-                    ? theme.colorScheme.primary
+                    ? theme.colorScheme.onPrimaryContainer
                     : theme.colorScheme.onSurface,
               ),
               textAlign: TextAlign.center,

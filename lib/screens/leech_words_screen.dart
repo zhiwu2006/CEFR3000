@@ -1075,7 +1075,12 @@ class _DetailedExplanationSheet extends ConsumerWidget {
                 child: explanationAsync.when(
                   data: (data) {
                     if (data.error != null) {
-                      return _buildErrorState(theme, data.error!, ref);
+                      return _buildErrorState(
+                        theme,
+                        data.error!,
+                        ref,
+                        scrollController,
+                      );
                     }
                     return ListView(
                       controller: scrollController,
@@ -1115,8 +1120,12 @@ class _DetailedExplanationSheet extends ConsumerWidget {
                   },
                   loading: () =>
                       const Center(child: CircularProgressIndicator()),
-                  error: (error, stack) =>
-                      _buildErrorState(theme, error.toString(), ref),
+                  error: (error, stack) => _buildErrorState(
+                    theme,
+                    error.toString(),
+                    ref,
+                    scrollController,
+                  ),
                 ),
               ),
             ],
@@ -1126,41 +1135,67 @@ class _DetailedExplanationSheet extends ConsumerWidget {
     );
   }
 
-  Widget _buildErrorState(ThemeData theme, String errorMsg, WidgetRef ref) {
-    String displayMsg = errorMsg;
-    if (errorMsg.contains('missing_api_key')) {
-      displayMsg = '未设置 API Key';
+  /// AI 释义拿不到时仍展示词库自带的释义，只用一条提示说明原因。
+  Widget _buildErrorState(
+    ThemeData theme,
+    String errorMsg,
+    WidgetRef ref,
+    ScrollController scrollController,
+  ) {
+    final missingKey = errorMsg.contains('missing_api_key');
+    final String displayMsg;
+    if (missingKey) {
+      displayMsg = '在设置中填写 API Key 后，可查看例句、词根和记忆法';
     } else if (errorMsg.startsWith('http_')) {
-      displayMsg = '请求失败';
+      displayMsg = 'AI 释义请求失败，下面是词库自带的释义';
     } else if (errorMsg == 'request_failed') {
-      displayMsg = '网络请求失败';
+      displayMsg = '网络请求失败，下面是词库自带的释义';
+    } else {
+      displayMsg = 'AI 释义暂不可用：$errorMsg';
     }
 
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(32),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(Icons.error_outline, size: 48, color: theme.colorScheme.error),
-            const SizedBox(height: 16),
-            Text(
-              displayMsg,
-              style: theme.textTheme.titleMedium?.copyWith(
-                color: theme.colorScheme.error,
-              ),
-              textAlign: TextAlign.center,
-            ),
-            const SizedBox(height: 24),
-            ElevatedButton.icon(
-              onPressed: () =>
-                  ref.refresh(wordDetailedExplanationProvider(word)),
-              icon: const Icon(Icons.refresh),
-              label: const Text('重试'),
-            ),
-          ],
+    return ListView(
+      controller: scrollController,
+      padding: const EdgeInsets.all(24),
+      children: [
+        _buildSection(theme, '中文释义', word.cnDefs.join('；')),
+        _buildSection(
+          theme,
+          '词性 · 级别',
+          [word.pos, word.level].where((v) => v.isNotEmpty).join(' · '),
         ),
-      ),
+        Container(
+          padding: const EdgeInsets.fromLTRB(16, 12, 8, 12),
+          decoration: BoxDecoration(
+            color: theme.colorScheme.surfaceContainerHighest,
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: Row(
+            children: [
+              Icon(
+                missingKey ? Icons.key_outlined : Icons.cloud_off_outlined,
+                size: 20,
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  displayMsg,
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
+                ),
+              ),
+              if (!missingKey)
+                TextButton(
+                  onPressed: () =>
+                      ref.invalidate(wordDetailedExplanationProvider(word)),
+                  child: const Text('重试'),
+                ),
+            ],
+          ),
+        ),
+      ],
     );
   }
 

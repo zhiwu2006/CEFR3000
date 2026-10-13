@@ -7,6 +7,7 @@ import 'package:crypto/crypto.dart';
 import '../../domain/srs.dart';
 import '../../features/lexicon/domain/lexicon_models.dart';
 import '../../features/memory/domain/learning_item_state.dart';
+import '../../features/progress/domain/daily_records.dart';
 import '../../features/progress/domain/memory_analytics.dart';
 import '../../features/progress/domain/study_streak.dart';
 import '../../features/memory/domain/memory_replay.dart';
@@ -1460,6 +1461,10 @@ class SqliteProgressRepository
       'avgAccuracy': accuracy,
       'avgStability': stability,
       'avgDifficulty': difficulty,
+      // 与首页每日明细的「用时」同一口径，统计页的累计学习时长才不会是 0。
+      'totalDurationMs': DailyRecord.fromRuns(
+        runs,
+      ).fold<int>(0, (sum, record) => sum + record.studyMs),
       'totalTestRuns': runs.length,
       'finishedTestRuns': runs.where((run) => run.isFinished).length,
       'totalAttempts': attempts.length,
