@@ -7,6 +7,7 @@ import 'package:vocab_flash_test/data/word_repository.dart';
 import 'package:vocab_flash_test/features/memory/application/recall_commit_service.dart';
 import 'package:vocab_flash_test/features/sync/application/cloud_sync_service.dart';
 import 'package:vocab_flash_test/features/sync/data/cloudflare_sync.dart';
+import 'package:vocab_flash_test/data/word_preference_repository.dart';
 import 'package:vocab_flash_test/models/attempt.dart';
 import 'package:vocab_flash_test/models/test_run.dart';
 
@@ -32,6 +33,11 @@ class _FakeCloud implements SyncRemote {
     for (final row in rows) {
       final id = row['id'] as String;
       if (t.containsKey(id) && !updateExisting) continue;
+      // 与 Worker 一致：标记只接受更新的快照。
+      if (table == CloudSyncService.flagsTable && t.containsKey(id)) {
+        final old = t[id]!['changed_at'] as String;
+        if ((row['changed_at'] as String).compareTo(old) <= 0) continue;
+      }
       _clock = _clock.add(const Duration(seconds: 1));
       t[id] = {...row, 'updated_at': _clock.toIso8601String()};
     }
@@ -220,6 +226,64 @@ void main() {
       await tablet.close();
     },
   );
+
+  test('word flags follow the latest change on either device', () async {
+    final phone = await device('phone');
+    final tablet = await device('tablet');
+    final cloud = _FakeCloud();
+    Future<SyncReport> sync(SqliteProgressRepository repo) => CloudSyncService(
+      repository: repo,
+      remote: cloud,
+      accountKey: 'https://sync.example',
+    ).syncNow();
+
+    // 手机：词 1 标疑难、词 2 标已认识、词 3 暂不学习。
+    await phone.markWordDifficult(1);
+    await phone.markWordKnown(2);
+    await phone.saveWordPreference(
+      UserWordPreference(
+        lexemeId: 'legacy:3',
+        suspended: true,
+        updatedAt: DateTime.now(),
+      ),
+    );
+    expect((await sync(phone)).pushedFlags, 3);
+    final received = await sync(tablet);
+    expect(received.merged.changedFlags, 3);
+    expect((await tablet.getCardState(1))!.isMarkedDifficult, isTrue);
+    expect((await tablet.getCardState(2))!.isManuallyKnown, isTrue);
+    expect((await tablet.getWordPreference('legacy:3'))!.suspended, isTrue);
+    // 收到的标记不回传。
+    expect((await sync(tablet)).pushedFlags, 0);
+
+    // 平板稍后取消疑难、恢复词 3：手机同步后跟随平板。
+    await Future<void>.delayed(const Duration(milliseconds: 5));
+    await tablet.unmarkWordDifficult(1);
+    await tablet.clearWordPreference('legacy:3');
+    expect((await sync(tablet)).pushedFlags, 2);
+    expect((await sync(phone)).merged.changedFlags, 2);
+    expect((await phone.getCardState(1))!.isMarkedDifficult, isFalse);
+    expect(await phone.getWordPreference('legacy:3'), isNull);
+
+    await phone.close();
+    await tablet.close();
+  });
+
+  test('flags set before sync existed are uploaded once', () async {
+    final phone = await device('phone');
+    final cloud = _FakeCloud();
+    await phone.markWordDifficult(7);
+    // 模拟升级前就有的标记：清掉变更记录，只留卡片上的标记位。
+    await phone.clearFlagLogForTest();
+    final service = CloudSyncService(
+      repository: phone,
+      remote: cloud,
+      accountKey: 'https://sync.example',
+    );
+    expect((await service.syncNow()).pushedFlags, 1);
+    expect((await service.syncNow()).pushedFlags, 0);
+    await phone.close();
+  });
 
   test('cursors are per sync target', () async {
     final phone = await device('phone');

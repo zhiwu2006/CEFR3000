@@ -25,6 +25,16 @@ CREATE TABLE IF NOT EXISTS test_runs (
   updated_at TEXT NOT NULL
 );
 
+-- 用户标记（疑难、已认识、暂不学习）每词一行，按 changed_at 后写者胜。
+CREATE TABLE IF NOT EXISTS word_flags (
+  id TEXT PRIMARY KEY,
+  word_id INTEGER NOT NULL,
+  changed_at TEXT NOT NULL,
+  payload TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+
 CREATE INDEX IF NOT EXISTS review_events_pull ON review_events (updated_at, id);
 CREATE INDEX IF NOT EXISTS exposure_events_pull ON exposure_events (updated_at, id);
 CREATE INDEX IF NOT EXISTS test_runs_pull ON test_runs (updated_at, id);
+CREATE INDEX IF NOT EXISTS word_flags_pull ON word_flags (updated_at, id);

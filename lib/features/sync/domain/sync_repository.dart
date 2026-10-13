@@ -11,12 +11,24 @@ class SyncMergeResult {
   /// 因新事件而按事件历史重算了卡片状态的词数。
   final int rebuiltCards;
 
+  /// 采用了远程标记（疑难、已认识、暂不学习）的词数。
+  final int changedFlags;
+
   const SyncMergeResult({
     required this.newEvents,
     required this.newExposures,
     required this.newRuns,
     required this.rebuiltCards,
+    this.changedFlags = 0,
   });
+
+  SyncMergeResult withFlags(int changedFlags) => SyncMergeResult(
+    newEvents: newEvents,
+    newExposures: newExposures,
+    newRuns: newRuns,
+    rebuiltCards: rebuiltCards,
+    changedFlags: changedFlags,
+  );
 
   static const empty = SyncMergeResult(
     newEvents: 0,
@@ -25,7 +37,7 @@ class SyncMergeResult {
     rebuiltCards: 0,
   );
 
-  bool get changed => newEvents + newExposures + newRuns > 0;
+  bool get changed => newEvents + newExposures + newRuns + changedFlags > 0;
 }
 
 /// 待上传的本地记录，按本地写入顺序（rowid）增量读取。
@@ -44,6 +56,57 @@ class SyncOutbox {
   });
 
   bool get isEmpty => events.isEmpty && exposures.isEmpty && runs.isEmpty;
+}
+
+/// 一个词的用户标记快照（疑难、已认识、暂不学习），按 [changedAt] 后写者胜。
+///
+/// 标记是用户意图而不是学习事实，没法像作答事件那样合并，只能取最新的一次。
+class WordFlagChange {
+  final int wordId;
+  final bool difficult;
+  final bool known;
+  final bool suspended;
+  final DateTime changedAt;
+
+  const WordFlagChange({
+    required this.wordId,
+    required this.difficult,
+    required this.known,
+    required this.suspended,
+    required this.changedAt,
+  });
+
+  String get id => 'w:$wordId';
+
+  bool sameFlags(WordFlagChange other) =>
+      difficult == other.difficult &&
+      known == other.known &&
+      suspended == other.suspended;
+
+  /// 时间相同（比如两台设备都在首次同步时补录）时按内容决胜，保证各端结果一致。
+  bool isNewerThan(WordFlagChange other) {
+    final byTime = changedAt.compareTo(other.changedAt);
+    if (byTime != 0) return byTime > 0;
+    return _rank > other._rank;
+  }
+
+  int get _rank => (difficult ? 4 : 0) | (known ? 2 : 0) | (suspended ? 1 : 0);
+
+  Map<String, dynamic> toJson() => {
+    'wordId': wordId,
+    'difficult': difficult,
+    'known': known,
+    'suspended': suspended,
+    'changedAt': changedAt.toUtc().toIso8601String(),
+  };
+
+  factory WordFlagChange.fromJson(Map<String, dynamic> json) => WordFlagChange(
+    wordId: json['wordId'] as int,
+    difficult: json['difficult'] as bool,
+    known: json['known'] as bool,
+    suspended: json['suspended'] as bool,
+    changedAt: DateTime.parse(json['changedAt'] as String),
+  );
 }
 
 /// 支持云同步的本地仓储能力。
@@ -69,4 +132,13 @@ abstract interface class SyncableProgressRepository {
     required List<ExposureEvent> exposures,
     required List<TestRun> runs,
   });
+
+  /// 本地标记变更里序号在 [after] 之后的（序号, 快照），按序号升序。
+  Future<List<(int, WordFlagChange)>> pendingFlagChanges({
+    required int after,
+    int limit = 500,
+  });
+
+  /// 应用比本地更新的远程标记，返回实际改动的词数。
+  Future<int> mergeFlagChanges(List<WordFlagChange> changes);
 }

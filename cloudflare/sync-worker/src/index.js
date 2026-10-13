@@ -8,6 +8,14 @@ const TABLES = {
   review_events: { columns: ['id', 'word_id', 'created_at', 'payload'], updatable: false },
   exposure_events: { columns: ['id', 'word_id', 'local_date', 'payload'], updatable: false },
   test_runs: { columns: ['id', 'started_at', 'finished_at', 'payload'], updatable: true },
+  // 用户标记按词覆盖，只接受更新的快照（后写者胜），设备推送先后不影响结果。
+  word_flags: {
+    columns: ['id', 'word_id', 'changed_at', 'payload'],
+    updatable: true,
+    newerOnly:
+      'excluded.changed_at > word_flags.changed_at OR ' +
+      '(excluded.changed_at = word_flags.changed_at AND excluded.payload > word_flags.payload)',
+  },
 };
 
 const MAX_ROWS = 500;
@@ -51,7 +59,8 @@ async function push(body, db) {
   const cols = spec.columns;
   const placeholders = cols.map(() => '?').join(', ');
   const onConflict = updateExisting
-    ? `DO UPDATE SET ${cols.slice(1).map((c) => `${c} = excluded.${c}`).join(', ')}, updated_at = ${NOW}`
+    ? `DO UPDATE SET ${cols.slice(1).map((c) => `${c} = excluded.${c}`).join(', ')}, updated_at = ${NOW}` +
+      (spec.newerOnly ? ` WHERE ${spec.newerOnly}` : '')
     : 'DO NOTHING';
   const sql =
     `INSERT INTO ${body.table} (${cols.join(', ')}, updated_at) ` +

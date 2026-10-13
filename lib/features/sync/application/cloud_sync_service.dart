@@ -27,6 +27,7 @@ class SyncReport {
   final int pushedEvents;
   final int pushedExposures;
   final int pushedRuns;
+  final int pushedFlags;
   final SyncMergeResult merged;
   final DateTime finishedAt;
 
@@ -34,6 +35,7 @@ class SyncReport {
     required this.pushedEvents,
     required this.pushedExposures,
     required this.pushedRuns,
+    this.pushedFlags = 0,
     required this.merged,
     required this.finishedAt,
   });
@@ -44,6 +46,7 @@ class CloudSyncService {
   static const eventsTable = 'review_events';
   static const exposuresTable = 'exposure_events';
   static const runsTable = 'test_runs';
+  static const flagsTable = 'word_flags';
 
   /// 拉取时向前回看一段时间，覆盖云端并发提交造成的 updated_at 先后错位；
   /// 重复拉到的行在合并时按 id 去重。
@@ -73,11 +76,13 @@ class CloudSyncService {
 
   Future<SyncReport> syncNow() async {
     final pushed = await _push();
-    final merged = await _pull();
+    final pushedFlags = await _pushFlags();
+    final merged = (await _pull()).withFlags(await _pullFlags());
     return SyncReport(
       pushedEvents: pushed.$1,
       pushedExposures: pushed.$2,
       pushedRuns: pushed.$3,
+      pushedFlags: pushedFlags,
       merged: merged,
       finishedAt: now(),
     );
@@ -126,6 +131,48 @@ class CloudSyncService {
       if (!full) break;
     }
     return (events, exposures, runs);
+  }
+
+  /// 标记按词覆盖：云端只在收到的快照比已有的新时才更新（见 Worker）。
+  Future<int> _pushFlags() async {
+    var pushed = 0;
+    while (true) {
+      final after = await _intMeta('push:flags');
+      final pending = await repository.pendingFlagChanges(
+        after: after,
+        limit: pageSize,
+      );
+      if (pending.isEmpty) break;
+      await remote.upsert(flagsTable, [
+        for (final (_, change) in pending)
+          {
+            'id': change.id,
+            'word_id': change.wordId,
+            'changed_at': change.changedAt.toUtc().toIso8601String(),
+            'payload': change.toJson(),
+          },
+      ], updateExisting: true);
+      await _setMeta('push:flags', pending.last.$1);
+      pushed += pending.length;
+      if (pending.length < pageSize) break;
+    }
+    return pushed;
+  }
+
+  Future<int> _pullFlags() async {
+    final fetched = await _fetchAll(flagsTable, 'pull:flags');
+    if (fetched.rows.isEmpty) return 0;
+    final changed = await repository.mergeFlagChanges(
+      _decodeAll(fetched.rows, WordFlagChange.fromJson),
+    );
+    final latest = fetched.latest;
+    if (latest != null) {
+      await repository.setSyncMeta(
+        _key('pull:flags'),
+        latest.toIso8601String(),
+      );
+    }
+    return changed;
   }
 
   Future<SyncMergeResult> _pull() async {

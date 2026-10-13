@@ -1,5 +1,6 @@
 import 'dart:convert';
 
+import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:sqflite/sqflite.dart';
 import 'package:crypto/crypto.dart';
 
@@ -35,7 +36,7 @@ class SqliteProgressRepository
         WordPreferenceRepository,
         MigrationTarget,
         SyncableProgressRepository {
-  static const int schemaVersion = 2;
+  static const int schemaVersion = 3;
   static const String databaseFileName = 'vocab_learning_core.db';
 
   final WordRepository _wordRepository;
@@ -253,15 +254,29 @@ class SqliteProgressRepository
 
   @override
   Future<void> saveWordPreference(UserWordPreference preference) async {
-    await _db.insert('word_preferences', {
-      'lexeme_id': preference.lexemeId,
-      'suspended': preference.suspended ? 1 : 0,
-      'self_declared_known': preference.selfDeclaredKnown ? 1 : 0,
-      'manual_difficult': preference.manualDifficult ? 1 : 0,
-      'updated_at': preference.updatedAt.toIso8601String(),
-      'payload': jsonEncode(preference.toJson()),
-    }, conflictAlgorithm: ConflictAlgorithm.replace);
+    await _db.insert(
+      'word_preferences',
+      _wordPreferenceRow(preference),
+      conflictAlgorithm: ConflictAlgorithm.replace,
+    );
+    final wordId = _legacyWordId(preference.lexemeId);
+    if (wordId != null) await _logFlags(_db, wordId);
   }
+
+  static Map<String, Object?> _wordPreferenceRow(
+    UserWordPreference preference,
+  ) => {
+    'lexeme_id': preference.lexemeId,
+    'suspended': preference.suspended ? 1 : 0,
+    'self_declared_known': preference.selfDeclaredKnown ? 1 : 0,
+    'manual_difficult': preference.manualDifficult ? 1 : 0,
+    'updated_at': preference.updatedAt.toIso8601String(),
+    'payload': jsonEncode(preference.toJson()),
+  };
+
+  static int? _legacyWordId(String lexemeId) => lexemeId.startsWith('legacy:')
+      ? int.tryParse(lexemeId.substring('legacy:'.length))
+      : null;
 
   @override
   Future<void> clearWordPreference(String lexemeId) async {
@@ -270,6 +285,8 @@ class SqliteProgressRepository
       where: 'lexeme_id = ?',
       whereArgs: [lexemeId],
     );
+    final wordId = _legacyWordId(lexemeId);
+    if (wordId != null) await _logFlags(_db, wordId);
   }
 
   Future<void> init() async {
@@ -410,6 +427,18 @@ class SqliteProgressRepository
         payload TEXT NOT NULL
       )
     ''');
+    // 用户标记的最新快照；seq 是本地写入序号，作为上传游标（0 表示来自远程，不再回传）。
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS word_flag_log (
+        word_id INTEGER PRIMARY KEY,
+        seq INTEGER NOT NULL,
+        changed_at TEXT NOT NULL,
+        payload TEXT NOT NULL
+      )
+    ''');
+    await db.execute(
+      'CREATE INDEX IF NOT EXISTS idx_word_flag_log_seq ON word_flag_log(seq)',
+    );
     await db.execute(
       'CREATE INDEX IF NOT EXISTS idx_card_states_due ON card_states(due_at)',
     );
@@ -572,14 +601,19 @@ class SqliteProgressRepository
         where: 'lexeme_id = ?',
         whereArgs: ['legacy:$wordId'],
       );
+      await _logFlags(txn, wordId);
     });
   }
 
   @override
   Future<void> markWordKnown(int wordId) async {
-    final current = await getCardState(wordId);
+    await saveCardState(_knownState(await getCardState(wordId), wordId));
+    await _logFlags(_db, wordId);
+  }
+
+  static CardState _knownState(CardState? current, int wordId) {
     final now = DateTime.now();
-    final state = CardState(
+    return CardState(
       wordId: wordId,
       stability: 20,
       difficulty: 1.6,
@@ -593,19 +627,21 @@ class SqliteProgressRepository
       longTermReviews: current?.longTermReviews ?? 0,
       revision: (current?.revision ?? 0) + 1,
     );
-    await saveCardState(state);
   }
 
   @override
   Future<void> markWordDifficult(int wordId) async {
     final current = await getCardState(wordId) ?? CardState.newCard(wordId);
     await saveCardState(current.markDifficult());
+    await _logFlags(_db, wordId);
   }
 
   @override
   Future<void> unmarkWordDifficult(int wordId) async {
     final current = await getCardState(wordId);
-    if (current != null) await saveCardState(current.unmarkDifficult());
+    if (current == null) return;
+    await saveCardState(current.unmarkDifficult());
+    await _logFlags(_db, wordId);
   }
 
   @override
@@ -1095,6 +1131,247 @@ class SqliteProgressRepository
         rebuiltCards: rebuilt,
       );
     });
+  }
+
+  /// 首次同步前已有的标记没有变更记录：按旧时间补录一次，任何真实改动都比它新。
+  static final _seedTime = DateTime.utc(2000);
+
+  Future<WordFlagChange> _flagSnapshot(
+    DatabaseExecutor db,
+    int wordId,
+    DateTime at,
+  ) async {
+    final cards = await db.query(
+      'card_states',
+      columns: ['flags'],
+      where: 'word_id = ?',
+      whereArgs: [wordId],
+      limit: 1,
+    );
+    final prefs = await db.query(
+      'word_preferences',
+      columns: ['suspended'],
+      where: 'lexeme_id = ?',
+      whereArgs: ['legacy:$wordId'],
+      limit: 1,
+    );
+    final flags = cards.isEmpty ? 0 : cards.first['flags']! as int;
+    return WordFlagChange(
+      wordId: wordId,
+      difficult: flags & CardState.difficultFlag != 0,
+      known: flags & CardState.manuallyKnownFlag != 0,
+      suspended: prefs.isNotEmpty && prefs.first['suspended'] == 1,
+      changedAt: at,
+    );
+  }
+
+  Future<void> _writeFlagLog(
+    DatabaseExecutor db,
+    WordFlagChange change, {
+    required int seq,
+  }) => db.insert('word_flag_log', {
+    'word_id': change.wordId,
+    'seq': seq,
+    'changed_at': change.changedAt.toUtc().toIso8601String(),
+    'payload': jsonEncode(change.toJson()),
+  }, conflictAlgorithm: ConflictAlgorithm.replace);
+
+  Future<int> _nextFlagSeq(DatabaseExecutor db) async {
+    final rows = await db.rawQuery(
+      'SELECT COALESCE(MAX(seq), 0) + 1 AS n FROM word_flag_log',
+    );
+    return rows.first['n']! as int;
+  }
+
+  /// 用户改了标记后记下最新快照，等下次同步上传。
+  Future<void> _logFlags(
+    DatabaseExecutor db,
+    int wordId, {
+    DateTime? at,
+  }) async {
+    final snapshot = await _flagSnapshot(db, wordId, at ?? DateTime.now());
+    await _writeFlagLog(db, snapshot, seq: await _nextFlagSeq(db));
+  }
+
+  Future<void> _seedFlagLog() async {
+    if (await getSyncMeta('flags_seeded') != null) return;
+    await _db.transaction((txn) async {
+      final logged = {
+        for (final row in await txn.query(
+          'word_flag_log',
+          columns: ['word_id'],
+        ))
+          row['word_id']! as int,
+      };
+      final wordIds = <int>{
+        for (final row in await txn.query(
+          'card_states',
+          columns: ['word_id'],
+          where: 'flags != 0',
+        ))
+          row['word_id']! as int,
+        for (final row in await txn.query(
+          'word_preferences',
+          columns: ['lexeme_id'],
+          where: 'suspended = 1',
+        ))
+          ?_legacyWordId(row['lexeme_id']! as String),
+      }..removeAll(logged);
+      for (final wordId in wordIds) {
+        await _logFlags(txn, wordId, at: _seedTime);
+      }
+    });
+    await setSyncMeta('flags_seeded', '1');
+  }
+
+  @visibleForTesting
+  Future<void> clearFlagLogForTest() => _db.delete('word_flag_log');
+
+  @override
+  Future<List<(int, WordFlagChange)>> pendingFlagChanges({
+    required int after,
+    int limit = 500,
+  }) async {
+    await _seedFlagLog();
+    final rows = await _db.query(
+      'word_flag_log',
+      columns: ['seq', 'payload'],
+      where: 'seq > ?',
+      whereArgs: [after],
+      orderBy: 'seq ASC',
+      limit: limit,
+    );
+    return [
+      for (final row in rows)
+        (
+          row['seq']! as int,
+          WordFlagChange.fromJson(
+            Map<String, dynamic>.from(
+              jsonDecode(row['payload']! as String) as Map,
+            ),
+          ),
+        ),
+    ];
+  }
+
+  @override
+  Future<int> mergeFlagChanges(List<WordFlagChange> changes) async {
+    if (changes.isEmpty) return 0;
+    final latest = <int, WordFlagChange>{};
+    for (final change in changes) {
+      final seen = latest[change.wordId];
+      if (seen == null || change.isNewerThan(seen))
+        latest[change.wordId] = change;
+    }
+    return _db.transaction((txn) async {
+      var changed = 0;
+      for (final remote in latest.values) {
+        final rows = await txn.query(
+          'word_flag_log',
+          columns: ['seq', 'payload'],
+          where: 'word_id = ?',
+          whereArgs: [remote.wordId],
+          limit: 1,
+        );
+        final local = rows.isEmpty
+            ? null
+            : WordFlagChange.fromJson(
+                Map<String, dynamic>.from(
+                  jsonDecode(rows.first['payload']! as String) as Map,
+                ),
+              );
+        if (local != null && !remote.isNewerThan(local)) continue;
+        final current = await _flagSnapshot(
+          txn,
+          remote.wordId,
+          remote.changedAt,
+        );
+        if (!current.sameFlags(remote)) {
+          await _applyFlags(txn, remote);
+          changed++;
+        }
+        // 保留原序号：游标已越过它，不会把远程的标记再传回去。
+        await _writeFlagLog(
+          txn,
+          remote,
+          seq: rows.isEmpty ? 0 : rows.first['seq']! as int,
+        );
+      }
+      return changed;
+    });
+  }
+
+  Future<void> _applyFlags(DatabaseExecutor txn, WordFlagChange flags) async {
+    final wordId = flags.wordId;
+    final cards = await txn.query(
+      'card_states',
+      columns: ['payload'],
+      where: 'word_id = ?',
+      whereArgs: [wordId],
+      limit: 1,
+    );
+    final before = cards.isEmpty
+        ? null
+        : _decodeCardState(cards.first['payload']);
+    var card = before;
+    if (flags.known && !(card?.isManuallyKnown ?? false)) {
+      card = _knownState(card, wordId);
+    } else if (!flags.known && card != null && card.isManuallyKnown) {
+      card = card.copyWith(
+        flags: card.flags & ~CardState.manuallyKnownFlag,
+        revision: card.revision + 1,
+      );
+    }
+    if (flags.difficult != (card?.isMarkedDifficult ?? false)) {
+      card = flags.difficult
+          ? (card ?? CardState.newCard(wordId)).markDifficult()
+          : card!.unmarkDifficult();
+    }
+    if (card != null && !identical(card, before)) {
+      await txn.insert(
+        'card_states',
+        _cardStateRow(card),
+        conflictAlgorithm: ConflictAlgorithm.replace,
+      );
+    }
+
+    final lexemeId = 'legacy:$wordId';
+    final prefs = await txn.query(
+      'word_preferences',
+      columns: ['payload'],
+      where: 'lexeme_id = ?',
+      whereArgs: [lexemeId],
+      limit: 1,
+    );
+    final pref = prefs.isEmpty
+        ? null
+        : UserWordPreference.fromJson(
+            Map<String, dynamic>.from(
+              jsonDecode(prefs.first['payload']! as String) as Map,
+            ),
+          );
+    if ((pref?.suspended ?? false) == flags.suspended) return;
+    final next =
+        (pref ??
+                UserWordPreference(
+                  lexemeId: lexemeId,
+                  updatedAt: flags.changedAt,
+                ))
+            .copyWith(suspended: flags.suspended, updatedAt: flags.changedAt);
+    if (!next.suspended && !next.selfDeclaredKnown && !next.manualDifficult) {
+      // 和「恢复学习」一致：没有其它偏好时整行删除。
+      await txn.delete(
+        'word_preferences',
+        where: 'lexeme_id = ?',
+        whereArgs: [lexemeId],
+      );
+    } else {
+      await txn.insert(
+        'word_preferences',
+        _wordPreferenceRow(next),
+        conflictAlgorithm: ConflictAlgorithm.replace,
+      );
+    }
   }
 
   @override

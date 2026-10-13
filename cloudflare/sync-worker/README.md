@@ -2,7 +2,7 @@
 
 手机和平板通过这个 Cloudflare Worker 同步学习记录。单用户，用一个随机的同步密钥保护；数据存在 Cloudflare D1（免费额度足够）。
 
-同步的只有只追加的学习事实：作答事件、新词首次接触、测试轮次。卡片状态不上传，各设备收到新记录后按事件历史在本地重算。设置和 AI 接口密钥不上传。
+同步的是只追加的学习事实（作答事件、新词首次接触、测试轮次）和用户标记（疑难、已认识、暂不学习，每词一行，后写者胜）。卡片状态不上传，各设备收到新记录后按事件历史在本地重算。设置和 AI 接口密钥不上传。
 
 ## 部署（只需一次）
 
@@ -33,10 +33,12 @@ npx wrangler deploy
 所有请求都要带 `Authorization: Bearer <SYNC_TOKEN>`，否则返回 401。
 
 - `GET /v1/health`：检查密钥与数据库。
-- `POST /v1/push`：`{ table, rows, updateExisting }`，按 `id` 写入。作答事件和接触记录已存在时忽略；只有 `test_runs` 允许覆盖（轮次完成后会再传一次）。每次最多 500 行。
+- `POST /v1/push`：`{ table, rows, updateExisting }`，按 `id` 写入。作答事件和接触记录已存在时忽略；`test_runs` 允许覆盖（轮次完成后会再传一次）；`word_flags` 只在收到的 `changed_at` 更新时覆盖。每次最多 500 行。
 - `GET /v1/pull?table=&since=&offset=&limit=`：按服务端 `updated_at` 增量读取。
 
-`table` 只接受 `review_events`、`exposure_events`、`test_runs`。
+`table` 只接受 `review_events`、`exposure_events`、`test_runs`、`word_flags`。
+
+加表后在已部署的数据库上重新执行第 3 步建表（`IF NOT EXISTS`，不影响已有数据）。
 
 ## 本地测试
 
