@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../features/sync/data/supabase_sync.dart';
 import '../session/base_providers.dart';
 
 /// 加载页面
@@ -20,6 +21,8 @@ class LoadingScreen extends ConsumerWidget {
             WidgetsBinding.instance.addPostFrameCallback((_) {
               if (context.mounted) {
                 Navigator.of(context).pushReplacementNamed('/home');
+                // 启动后在后台同步一次；未登录或离线时安静跳过。
+                ref.read(cloudSyncProvider.notifier).syncNow(quiet: true);
               }
             });
           }

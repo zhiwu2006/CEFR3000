@@ -7,6 +7,7 @@ import 'dart:io';
 
 import 'package:path_provider/path_provider.dart';
 
+import '../features/sync/presentation/cloud_sync_panel.dart';
 import '../session/base_providers.dart';
 
 import '../models/models.dart';
@@ -2191,6 +2192,12 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
           height: AppTheme.getResponsivePadding(context, AppTheme.paddingLarge),
         ),
 
+        _buildSection(context, '云同步', const [CloudSyncPanel()]),
+
+        SizedBox(
+          height: AppTheme.getResponsivePadding(context, AppTheme.paddingLarge),
+        ),
+
         // 数据管理
         _buildSection(context, '数据管理', [
           _buildLeechWordsButton(context, ref),
@@ -2307,6 +2314,15 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
               _buildHighContrastSwitch(context, ref, settings),
               _buildUiLocaleSelector(context, ref, settings),
             ]),
+
+            SizedBox(
+              height: AppTheme.getResponsivePadding(
+                context,
+                AppTheme.paddingLarge,
+              ),
+            ),
+
+            _buildSection(context, '云同步', const [CloudSyncPanel()]),
 
             SizedBox(
               height: AppTheme.getResponsivePadding(

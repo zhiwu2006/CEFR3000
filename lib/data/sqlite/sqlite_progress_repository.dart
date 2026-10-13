@@ -8,6 +8,8 @@ import '../../features/lexicon/domain/lexicon_models.dart';
 import '../../features/memory/domain/learning_item_state.dart';
 import '../../features/progress/domain/memory_analytics.dart';
 import '../../features/progress/domain/study_streak.dart';
+import '../../features/memory/domain/memory_replay.dart';
+import '../../features/sync/domain/sync_repository.dart';
 import '../../models/models.dart';
 import '../exposure_repository.dart';
 import '../learning_item_state_repository.dart';
@@ -31,7 +33,8 @@ class SqliteProgressRepository
         ExposureRepository,
         LearningItemStateRepository,
         WordPreferenceRepository,
-        MigrationTarget {
+        MigrationTarget,
+        SyncableProgressRepository {
   static const int schemaVersion = 2;
   static const String databaseFileName = 'vocab_learning_core.db';
 
@@ -913,6 +916,185 @@ class SqliteProgressRepository
       orderBy: 'created_at ASC',
     );
     return rows.map((row) => _decodeReviewEvent(row['payload'])).toList();
+  }
+
+  @override
+  Future<String?> getSyncMeta(String key) async {
+    final rows = await _db.query(
+      'meta',
+      columns: ['value'],
+      where: 'key = ?',
+      whereArgs: ['sync:$key'],
+      limit: 1,
+    );
+    return rows.isEmpty ? null : rows.first['value'] as String?;
+  }
+
+  @override
+  Future<void> setSyncMeta(String key, String value) async {
+    await _db.insert('meta', {
+      'key': 'sync:$key',
+      'value': value,
+    }, conflictAlgorithm: ConflictAlgorithm.replace);
+  }
+
+  @override
+  Future<SyncOutbox> pendingOutbox({
+    required int eventsAfter,
+    required int exposuresAfter,
+    required int runsAfter,
+    int limit = 500,
+  }) async {
+    Future<List<Map<String, Object?>>> rows(String table, int after) =>
+        _db.query(
+          table,
+          columns: ['rowid', 'payload'],
+          where: 'rowid > ?',
+          whereArgs: [after],
+          orderBy: 'rowid ASC',
+          limit: limit,
+        );
+    final events = [
+      for (final row in await rows('review_events', eventsAfter))
+        (row['rowid']! as int, _decodeReviewEvent(row['payload'])),
+    ];
+    return SyncOutbox(
+      // 未提交（pending）的事件只截到它之前，等提交后下一次再传。
+      events: events.takeWhile((entry) => entry.$2.isCommitted).toList(),
+      exposures: [
+        for (final row in await rows('exposure_events', exposuresAfter))
+          (
+            row['rowid']! as int,
+            ExposureEvent.fromJson(
+              Map<String, dynamic>.from(
+                jsonDecode(row['payload']! as String) as Map,
+              ),
+            ),
+          ),
+      ],
+      runs: [
+        for (final row in await rows('test_runs', runsAfter))
+          (row['rowid']! as int, _decodeTestRun(row['payload'])),
+      ],
+    );
+  }
+
+  @override
+  Future<SyncMergeResult> mergeSyncedData({
+    required List<ReviewEvent> events,
+    required List<ExposureEvent> exposures,
+    required List<TestRun> runs,
+  }) async {
+    return _db.transaction((txn) async {
+      final knownEventIds = {
+        for (final row in await txn.query('review_events', columns: ['id']))
+          row['id']! as String,
+      };
+      final fresh = <ReviewEvent>[
+        for (final event in events)
+          if (event.isCommitted && knownEventIds.add(event.id)) event,
+      ];
+      for (final event in fresh) {
+        await txn.insert(
+          'review_events',
+          _reviewEventRow(event),
+          conflictAlgorithm: ConflictAlgorithm.ignore,
+        );
+      }
+
+      var newExposures = 0;
+      for (final exposure in exposures) {
+        final inserted = await txn.insert(
+          'exposure_events',
+          _exposureEventRow(exposure),
+          conflictAlgorithm: ConflictAlgorithm.ignore,
+        );
+        if (inserted != 0) newExposures++;
+      }
+
+      // 轮次：本地没有的插入；本地未完成而远程已完成的，以远程为准。
+      var newRuns = 0;
+      for (final run in runs) {
+        final rows = await txn.query(
+          'test_runs',
+          columns: ['finished_at'],
+          where: 'id = ?',
+          whereArgs: [run.id],
+          limit: 1,
+        );
+        final localFinished =
+            rows.isNotEmpty && rows.first['finished_at'] != null;
+        if (rows.isNotEmpty && (localFinished || run.finishedAt == null)) {
+          continue;
+        }
+        await txn.insert('test_runs', {
+          'id': run.id,
+          'started_at': run.startedAt.toIso8601String(),
+          'finished_at': run.finishedAt?.toIso8601String(),
+          'payload': jsonEncode(run.toJson()),
+        }, conflictAlgorithm: ConflictAlgorithm.replace);
+        newRuns++;
+      }
+
+      // 只重算识别能力的卡片：用该词全部已提交事件（本地 + 远程）重放。
+      final affected = {
+        for (final event in fresh)
+          if (event.skill == 'meaningRecognition') event.attempt.wordId,
+      }.toList();
+      var rebuilt = 0;
+      for (var start = 0; start < affected.length; start += _maxSqlVariables) {
+        final chunk = affected.sublist(
+          start,
+          (start + _maxSqlVariables).clamp(0, affected.length),
+        );
+        final marks = List.filled(chunk.length, '?').join(',');
+        final history = (await txn.query(
+          'review_events',
+          columns: ['payload'],
+          where: 'word_id IN ($marks)',
+          whereArgs: chunk,
+        )).map((row) => _decodeReviewEvent(row['payload'])).toList();
+        final replay = const MemoryReplay().run(history);
+        final localRows = await txn.query(
+          'card_states',
+          columns: ['payload'],
+          where: 'word_id IN ($marks)',
+          whereArgs: chunk,
+        );
+        final local = {
+          for (final row in localRows)
+            _decodeCardState(row['payload']).wordId: _decodeCardState(
+              row['payload'],
+            ),
+        };
+        for (final entry in replay.legacyStates.entries) {
+          final before = local[entry.key];
+          // 保留用户标记（疑难等），revision 必须单调递增，后续提交才不冲突。
+          final next = entry.value.copyWith(
+            flags: before?.flags ?? entry.value.flags,
+            revision:
+                [
+                  before?.revision ?? 0,
+                  entry.value.revision,
+                ].reduce((a, b) => a > b ? a : b) +
+                1,
+          );
+          await txn.insert(
+            'card_states',
+            _cardStateRow(next),
+            conflictAlgorithm: ConflictAlgorithm.replace,
+          );
+          rebuilt++;
+        }
+      }
+
+      return SyncMergeResult(
+        newEvents: fresh.length,
+        newExposures: newExposures,
+        newRuns: newRuns,
+        rebuiltCards: rebuilt,
+      );
+    });
   }
 
   @override

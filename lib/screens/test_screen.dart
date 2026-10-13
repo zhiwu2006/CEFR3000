@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../features/sync/data/supabase_sync.dart';
 import '../session/base_providers.dart';
 import '../session/session_controller.dart';
 import '../session/session_models.dart';
@@ -1011,6 +1012,8 @@ class _TestScreenState extends ConsumerState<TestScreen>
         ref.read(appSettingsProvider.notifier).clearTestProgress();
         ref.invalidate(learningStatsProvider);
         ref.invalidate(dailyHistorySummariesProvider);
+        // 一轮已保存：后台推送到云端，另一台设备下次打开即可看到。
+        ref.read(cloudSyncProvider.notifier).syncNow(quiet: true);
 
         Navigator.of(context).pushReplacement(
           MaterialPageRoute(
