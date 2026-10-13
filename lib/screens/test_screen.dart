@@ -371,7 +371,10 @@ class _TestScreenState extends ConsumerState<TestScreen>
       ),
     );
     final buttonHeight = isTablet ? 72.0 : 48.0;
-    final buttonText = isTablet ? theme.textTheme.titleMedium : null;
+    // 只调字号，颜色交给按钮自身，否则深色按钮上的文字会变成同色看不见。
+    final buttonText = isTablet
+        ? TextStyle(fontSize: theme.textTheme.titleMedium?.fontSize)
+        : null;
     final buttons = Row(
       children: [
         Expanded(
@@ -403,34 +406,33 @@ class _TestScreenState extends ConsumerState<TestScreen>
 
     final size = MediaQuery.sizeOf(context);
     if (isTablet && size.width > size.height) {
-      // 平板横屏：左边单词，右边释义和操作，按钮固定在底部便于拇指点按。
+      // 平板横屏：单词和释义并排、上下居中对齐，操作按钮通栏放在底部。
       return Padding(
-        padding: const EdgeInsets.fromLTRB(40, 24, 40, 32),
-        child: Row(
+        padding: const EdgeInsets.fromLTRB(40, 56, 40, 32),
+        child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
+            header,
+            const SizedBox(height: 24),
             Expanded(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [header, const SizedBox(height: 24), wordDisplay],
-              ),
-            ),
-            const SizedBox(width: 40),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.center,
                 children: [
+                  Expanded(child: wordDisplay),
+                  const SizedBox(width: 40),
                   Expanded(
-                    child: Center(
-                      child: SingleChildScrollView(child: definitions),
+                    child: SingleChildScrollView(
+                      child: SizedBox(
+                        width: double.infinity,
+                        child: definitions,
+                      ),
                     ),
                   ),
-                  const SizedBox(height: 24),
-                  buttons,
                 ],
               ),
             ),
+            const SizedBox(height: 24),
+            buttons,
           ],
         ),
       );
