@@ -1,3 +1,4 @@
+import 'dart:math' as math;
 import 'dart:async';
 
 import 'package:flutter/material.dart';
@@ -841,187 +842,184 @@ class _TestScreenState extends ConsumerState<TestScreen>
         return SafeArea(
           child: Stack(
             children: [
-              // 主要内容
+              // 主要内容：顶部细进度条代替倒计时圆环；左右两栏等高，
+              // 单词卡与第一个选项顶端对齐，按钮与最后一个选项底端对齐。
               Padding(
-                padding: const EdgeInsets.all(24.0),
-                child: Row(
+                padding: const EdgeInsets.fromLTRB(32, 20, 32, 24),
+                child: Column(
                   children: [
-                    Expanded(
-                      flex: 2,
-                      child: SingleChildScrollView(
-                        child: Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            _buildWordDisplay(
-                              context,
-                              theme,
-                              settings,
-                              activeQuestion,
-                              themeStyle,
-                              isTablet: true,
-                            ),
-                            const SizedBox(height: 24),
-                            _buildWordBadges(
-                              context,
-                              theme,
-                              activeQuestion,
-                              themeStyle,
-                              isTablet: true,
-                            ),
-                            const SizedBox(height: 32),
-                            _buildProgressInfo(
-                              context,
-                              theme,
-                              data,
-                              themeStyle,
-                            ),
-                            const SizedBox(height: 16),
-                            // 暂停与重置并排并拉开距离，避免误触重置。
-                            Wrap(
-                              alignment: WrapAlignment.center,
-                              spacing: 32,
-                              runSpacing: 20,
-                              children: [
-                                GestureDetector(
-                                  onTap: () {
-                                    final controller = ref.read(
-                                      sessionControllerProvider.notifier,
-                                    );
-                                    debugPrint(
-                                      'Tablet pause button tapped, isPaused=$isPaused, state=${currentSessionData.state}',
-                                    );
-                                    if (isPaused) {
-                                      controller.resumeSession();
-                                    } else {
-                                      controller.pauseSession();
-                                    }
-                                  },
-                                  child: Container(
-                                    padding: const EdgeInsets.symmetric(
-                                      horizontal: 28,
-                                      vertical: 16,
-                                    ),
-                                    decoration: BoxDecoration(
-                                      color: theme.colorScheme.primary
-                                          .withValues(alpha: 0.1),
-                                      borderRadius: BorderRadius.circular(
-                                        borderRadius,
-                                      ),
-                                      border: Border.all(
-                                        color: theme.colorScheme.primary
-                                            .withValues(alpha: 0.3),
-                                      ),
-                                    ),
-                                    child: Row(
-                                      mainAxisSize: MainAxisSize.min,
-                                      children: [
-                                        Icon(
-                                          isPaused
-                                              ? Icons.play_arrow
-                                              : Icons.pause,
-                                          color: theme.colorScheme.primary,
-                                        ),
-                                        const SizedBox(width: 8),
-                                        Text(
-                                          isPaused ? '继续' : '暂停',
-                                          style: theme.textTheme.titleMedium
-                                              ?.copyWith(
-                                                color:
-                                                    theme.colorScheme.primary,
-                                                fontWeight: FontWeight.w600,
-                                              ),
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                ),
-                                GestureDetector(
-                                  onTap: () =>
-                                      _showResetConfirmDialog(context, ref),
-                                  child: Container(
-                                    padding: const EdgeInsets.symmetric(
-                                      horizontal: 28,
-                                      vertical: 16,
-                                    ),
-                                    decoration: BoxDecoration(
-                                      color: Colors.red.withValues(alpha: 0.1),
-                                      borderRadius: BorderRadius.circular(
-                                        borderRadius,
-                                      ),
-                                      border: Border.all(
-                                        color: Colors.red.withValues(
-                                          alpha: 0.3,
-                                        ),
-                                      ),
-                                    ),
-                                    child: Row(
-                                      mainAxisSize: MainAxisSize.min,
-                                      children: [
-                                        const Icon(
-                                          Icons.refresh,
-                                          color: Colors.red,
-                                        ),
-                                        const SizedBox(width: 8),
-                                        Text(
-                                          '重置',
-                                          style: theme.textTheme.titleMedium
-                                              ?.copyWith(
-                                                color: Colors.red,
-                                                fontWeight: FontWeight.w600,
-                                              ),
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ],
-                        ),
-                      ),
+                    _CountdownBarConsumer(
+                      totalTimeMs: data.currentTimeLimitMs,
+                      themeStyle: themeStyle,
                     ),
-                    const SizedBox(width: 32),
+                    const SizedBox(height: 20),
                     Expanded(
-                      flex: 3,
-                      child: Column(
-                        children: [
-                          _CountdownRingConsumer(
-                            totalTimeMs: data.currentTimeLimitMs,
-                            size: 120,
-                            themeStyle: themeStyle,
-                          ),
-                          const SizedBox(height: 32),
-                          Expanded(
-                            child: LayoutBuilder(
-                              builder: (context, box) {
-                                // 选项按可用高度平分，单个 76~128dp，间距 20dp。
-                                const gap = 20.0;
-                                final count = activeQuestion.options.length;
-                                final height =
-                                    ((box.maxHeight - gap * (count - 1)) /
-                                            count)
-                                        .clamp(76.0, 128.0);
-                                final options = _buildOptionButtons(
+                      child: LayoutBuilder(
+                        builder: (context, box) {
+                          // 选项按可用高度平分，单个 76~136dp，间距 20dp。
+                          const gap = 20.0;
+                          final count = activeQuestion.options.length;
+                          final height =
+                              ((box.maxHeight - gap * (count - 1)) / count)
+                                  .clamp(76.0, 136.0);
+                          final needed = height * count + gap * (count - 1);
+                          final options = _buildOptionButtons(
+                            context,
+                            theme,
+                            data,
+                            activeQuestion,
+                            themeStyle,
+                            optionHeight: height,
+                            gap: gap,
+                          );
+                          final left = Column(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: [
+                              // 单词卡撑满剩余高度，左栏与右侧选项区一样饱满。
+                              Expanded(
+                                child: _buildWordDisplay(
                                   context,
                                   theme,
-                                  data,
+                                  settings,
                                   activeQuestion,
                                   themeStyle,
-                                  optionHeight: height,
-                                  gap: gap,
-                                );
-                                final needed =
-                                    height * count + gap * (count - 1);
-                                return needed <= box.maxHeight
-                                    ? Align(
-                                        alignment: Alignment.topCenter,
-                                        child: options,
-                                      )
-                                    : SingleChildScrollView(child: options);
-                              },
-                            ),
-                          ),
-                        ],
+                                  isTablet: true,
+                                  expand: true,
+                                ),
+                              ),
+                              const SizedBox(height: gap),
+                              _buildProgressInfo(
+                                context,
+                                theme,
+                                data,
+                                themeStyle,
+                              ),
+                              const SizedBox(height: gap),
+                              // 暂停与重置并排并拉开距离，避免误触重置。
+                              Wrap(
+                                alignment: WrapAlignment.center,
+                                spacing: 32,
+                                runSpacing: 20,
+                                children: [
+                                  GestureDetector(
+                                    onTap: () {
+                                      final controller = ref.read(
+                                        sessionControllerProvider.notifier,
+                                      );
+                                      debugPrint(
+                                        'Tablet pause button tapped, isPaused=$isPaused, state=${currentSessionData.state}',
+                                      );
+                                      if (isPaused) {
+                                        controller.resumeSession();
+                                      } else {
+                                        controller.pauseSession();
+                                      }
+                                    },
+                                    child: Container(
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 28,
+                                        vertical: 16,
+                                      ),
+                                      decoration: BoxDecoration(
+                                        color: theme.colorScheme.primary
+                                            .withValues(alpha: 0.1),
+                                        borderRadius: BorderRadius.circular(
+                                          borderRadius,
+                                        ),
+                                        border: Border.all(
+                                          color: theme.colorScheme.primary
+                                              .withValues(alpha: 0.3),
+                                        ),
+                                      ),
+                                      child: Row(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          Icon(
+                                            isPaused
+                                                ? Icons.play_arrow
+                                                : Icons.pause,
+                                            color: theme.colorScheme.primary,
+                                          ),
+                                          const SizedBox(width: 8),
+                                          Text(
+                                            isPaused ? '继续' : '暂停',
+                                            style: theme.textTheme.titleMedium
+                                                ?.copyWith(
+                                                  color:
+                                                      theme.colorScheme.primary,
+                                                  fontWeight: FontWeight.w600,
+                                                ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  ),
+                                  GestureDetector(
+                                    onTap: () =>
+                                        _showResetConfirmDialog(context, ref),
+                                    child: Container(
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 28,
+                                        vertical: 16,
+                                      ),
+                                      decoration: BoxDecoration(
+                                        color: Colors.red.withValues(
+                                          alpha: 0.1,
+                                        ),
+                                        borderRadius: BorderRadius.circular(
+                                          borderRadius,
+                                        ),
+                                        border: Border.all(
+                                          color: Colors.red.withValues(
+                                            alpha: 0.3,
+                                          ),
+                                        ),
+                                      ),
+                                      child: Row(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          const Icon(
+                                            Icons.refresh,
+                                            color: Colors.red,
+                                          ),
+                                          const SizedBox(width: 8),
+                                          Text(
+                                            '重置',
+                                            style: theme.textTheme.titleMedium
+                                                ?.copyWith(
+                                                  color: Colors.red,
+                                                  fontWeight: FontWeight.w600,
+                                                ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ],
+                          );
+                          final row = Row(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: [
+                              Expanded(flex: 2, child: left),
+                              const SizedBox(width: 32),
+                              Expanded(flex: 3, child: options),
+                            ],
+                          );
+                          // 高度不够（分屏等）时整体滚动，不挤压选项。
+                          if (needed > box.maxHeight) {
+                            return SingleChildScrollView(
+                              child: SizedBox(
+                                height: math.max(needed, 560),
+                                child: row,
+                              ),
+                            );
+                          }
+                          return Center(
+                            child: SizedBox(height: needed, child: row),
+                          );
+                        },
                       ),
                     ),
                   ],
@@ -1110,9 +1108,11 @@ class _TestScreenState extends ConsumerState<TestScreen>
     Question question,
     ThemeStyle themeStyle, {
     bool isTablet = false,
+    bool expand = false,
   }) {
     if (themeStyle == ThemeStyle.digitalism) {
       return DigitalismCard(
+        expand: expand,
         windowTitle: 'VOCABULARY // ${question.word.level.toUpperCase()}',
         backgroundColor: DigitalismTheme.surface,
         margin: EdgeInsets.zero,
@@ -1121,6 +1121,7 @@ class _TestScreenState extends ConsumerState<TestScreen>
           vertical: isTablet ? 24 : 16,
         ),
         child: Column(
+          mainAxisSize: MainAxisSize.min,
           children: [
             Text(
               question.word.headword,
@@ -1185,7 +1186,9 @@ class _TestScreenState extends ConsumerState<TestScreen>
             ? Border.all(color: borderColor, width: borderWidth)
             : null,
       ),
+      alignment: expand ? Alignment.center : null,
       child: Column(
+        mainAxisSize: MainAxisSize.min,
         children: [
           Text(
             question.word.headword,
@@ -1437,6 +1440,60 @@ class _TestScreenState extends ConsumerState<TestScreen>
 }
 
 /// 局部倒计时渲染组件，将 50ms 高频更新完全隔离在此 Widget 内部，避免上层整树重绘
+/// 平板倒计时：一条随剩余时间收短的细进度条，最后阶段转为提醒色。
+class _CountdownBarConsumer extends ConsumerWidget {
+  final int totalTimeMs;
+  final ThemeStyle themeStyle;
+
+  const _CountdownBarConsumer({
+    required this.totalTimeMs,
+    required this.themeStyle,
+  });
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final millisLeft = ref.watch(
+      sessionControllerProvider.select((s) => s.millisLeft),
+    );
+    final theme = Theme.of(context);
+    final fraction = totalTimeMs <= 0
+        ? 0.0
+        : (millisLeft / totalTimeMs).clamp(0.0, 1.0);
+    final color = fraction > 0.5
+        ? theme.colorScheme.primary
+        : fraction > 0.25
+        ? Colors.orange.shade700
+        : theme.colorScheme.error;
+    return Semantics(
+      label: '剩余 ${(millisLeft / 1000).toStringAsFixed(1)} 秒',
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(3),
+        child: SizedBox(
+          height: 6,
+          child: Stack(
+            fit: StackFit.expand,
+            children: [
+              ColoredBox(
+                color: ThemeManager.getSecondaryTextColor(
+                  themeStyle,
+                ).withValues(alpha: 0.15),
+              ),
+              FractionallySizedBox(
+                alignment: Alignment.centerLeft,
+                widthFactor: fraction,
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 200),
+                  color: color,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class _CountdownRingConsumer extends ConsumerWidget {
   final int totalTimeMs;
   final double size;

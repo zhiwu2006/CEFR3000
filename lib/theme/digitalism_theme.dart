@@ -336,6 +336,9 @@ class DigitalismCard extends StatelessWidget {
   final Widget? trailingHeader;
   final VoidCallback? onTap;
 
+  /// 撑满父级给定的高度，内容在剩余空间里居中。
+  final bool expand;
+
   const DigitalismCard({
     super.key,
     required this.child,
@@ -346,10 +349,12 @@ class DigitalismCard extends StatelessWidget {
     this.borderRadius = DigitalismTheme.cardRadius,
     this.trailingHeader,
     this.onTap,
+    this.expand = false,
   });
 
   @override
   Widget build(BuildContext context) {
+    final body = Padding(padding: padding, child: child);
     Widget content = Container(
       margin: margin,
       decoration: BoxDecoration(
@@ -364,7 +369,7 @@ class DigitalismCard extends StatelessWidget {
       child: ClipRRect(
         borderRadius: BorderRadius.circular(borderRadius - 2.0),
         child: Column(
-          mainAxisSize: MainAxisSize.min,
+          mainAxisSize: expand ? MainAxisSize.max : MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             if (windowTitle != null)
@@ -372,7 +377,7 @@ class DigitalismCard extends StatelessWidget {
                 title: windowTitle!,
                 trailing: trailingHeader,
               ),
-            Padding(padding: padding, child: child),
+            expand ? Expanded(child: Center(child: body)) : body,
           ],
         ),
       ),
