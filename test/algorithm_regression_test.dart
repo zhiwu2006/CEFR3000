@@ -3,6 +3,7 @@ import 'package:vocab_flash_test/domain/srs.dart';
 import 'package:vocab_flash_test/models/models.dart';
 import 'package:vocab_flash_test/session/delayed_replay_manager.dart';
 import 'package:vocab_flash_test/session/session_models.dart';
+import 'support/schedule_attempts.dart';
 
 void main() {
   group('SRS timing and rating', () {
@@ -85,7 +86,7 @@ void main() {
           ),
       ];
 
-      card = SrsAlgorithm.batchUpdateCardStates({1: card}, attempts, 2000)[1]!;
+      card = scheduleAttempts(card, attempts);
 
       expect(card.longTermReviews, 0);
       expect(card.stability, lessThan(7));
@@ -114,23 +115,22 @@ void main() {
       'a successful review after a long gap counts as long-term evidence',
       () {
         final now = DateTime.now();
-        final card = CardState.newCard(
-          1,
-        ).copyWith(lastReview: now.subtract(const Duration(days: 2)));
-        final updated = SrsAlgorithm.batchUpdateCardStates(
-          {1: card},
-          [
-            Attempt(
-              wordId: 1,
-              result: AttemptResult.correct,
-              rtMs: 500,
-              chosenIndex: 0,
-              correctIndex: 0,
-              timestamp: now,
-            ),
-          ],
-          2000,
-        )[1]!;
+        // 两天前复习、间隔 1 天：今天已到期，这次答对是跨日的长期证据。
+        final lastReview = now.subtract(const Duration(days: 2));
+        final card = CardState.newCard(1).copyWith(
+          lastReview: lastReview,
+          due: lastReview.add(const Duration(days: 1)),
+        );
+        final updated = scheduleAttempts(card, [
+          Attempt(
+            wordId: 1,
+            result: AttemptResult.correct,
+            rtMs: 500,
+            chosenIndex: 0,
+            correctIndex: 0,
+            timestamp: now,
+          ),
+        ]);
 
         expect(updated.longTermReviews, 1);
       },

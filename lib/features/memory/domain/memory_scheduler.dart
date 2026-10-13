@@ -19,11 +19,6 @@ class MemoryScheduler {
   }) {
     final evaluation = RecallEvaluator.evaluate(evidence);
     final shortTermReview = !evaluation.countsAsLongTermReview;
-    // 注意：这里刻意不传 `recallProb`。`SrsAlgorithm.estimateRecallProbability`
-    // 及其 `_adjustStabilityByRecall` 分支因此**在生产路径上不会执行**——
-    // 当前实际的稳定度更新是纯对数阻尼模型，不包含 FSRS 幂律回忆概率校正。
-    // 这是已知的「实现与设计意图不一致」，属有意保留的现状，不是漏接线；
-    // 若要启用，请在此显式传入 `recallProb:` 并同步更新本注释与审查文档。
     final scheduled = SrsAlgorithm.updateCardState(
       current,
       evaluation.quality,

@@ -139,7 +139,6 @@ class SrsAlgorithm {
   static CardState updateCardState(
     CardState currentState,
     int quality, {
-    double? recallProb,
     DateTime? reviewedAt,
     bool shortTermReview = false,
     bool countFailureAsLongTerm = true,
@@ -152,13 +151,8 @@ class SrsAlgorithm {
       config,
       shortTermReview: shortTermReview,
     );
-    final adjustedStability = _adjustStabilityByRecall(
-      newStability,
-      quality,
-      recallProb,
-    );
     final intervalDays = _calculateInterval(
-      adjustedStability,
+      newStability,
       newDifficulty,
       config,
     );
@@ -172,7 +166,7 @@ class SrsAlgorithm {
         : calculatedDue;
 
     return currentState.updateSRS(
-      newStability: adjustedStability,
+      newStability: newStability,
       newDifficulty: newDifficulty,
       newDue: newDue,
       newRtP50: currentState.rtP50,
@@ -238,144 +232,6 @@ class SrsAlgorithm {
   ) {
     final rawInterval = config.gammaInterval * stability / difficulty;
     return rawInterval.round().clamp(1, config.maxIntervalDays);
-  }
-
-  /// 回忆概率估计（P1 修复：采用 FSRS 幂律遗忘曲线）
-  ///
-  /// R = (1 + t / (9 * S))^(-1)
-  /// 比简单指数模型 e^(-t/S) 更符合认知科学研究。
-  ///
-  /// **当前状态：生产路径未启用。** 本方法唯一的调用点是下方的兼容批处理
-  /// `batchUpdateCardStates`；而线上调度走 `MemoryScheduler.schedule` →
-  /// `updateCardState`，该调用链**不传** `recallProb`（见
-  /// `features/memory/domain/memory_scheduler.dart:22-29`）。因此幂律校正与
-  /// `_adjustStabilityByRecall` 目前都不会生效，实际稳定度增长仍是纯对数
-  /// 阻尼模型。若要启用，需在 `MemoryScheduler.schedule` 中显式传入。
-  static double estimateRecallProbability(
-    CardState currentState, {
-    DateTime? at,
-  }) {
-    final reviewTime = at ?? DateTime.now();
-    final minutesSinceReview = reviewTime
-        .difference(currentState.lastReview)
-        .inMinutes
-        .clamp(0, 60 * 24 * 365);
-    final daysSinceReview = minutesSinceReview.toDouble() / (60 * 24);
-    final stability = max(0.5, currentState.stability);
-    // FSRS 幂律遗忘曲线
-    return pow(
-      1 + daysSinceReview / (9 * stability),
-      -1.0,
-    ).toDouble().clamp(0.0, 1.0);
-  }
-
-  /// 根据回忆概率调整稳定度（P1 修复：限制最终惩罚下界）
-  ///
-  /// **当前状态：生产路径不可达。** `recallProb` 为 null 时直接原样返回，
-  /// 而生产调用链不传该参数，所以下面的奖励/惩罚分支目前不会执行。
-  /// 保留实现是为了在启用幂律校正时可以直接复用，勿据此推断线上行为。
-  static double _adjustStabilityByRecall(
-    double stability,
-    int quality,
-    double? recallProb,
-  ) {
-    if (recallProb == null) return stability;
-    final clampedRecall = recallProb.clamp(0.0, 1.0);
-    final factor = quality >= 3
-        ? 1 +
-              (1 - clampedRecall) *
-                  0.3 // 成功 + recall低 → 加更多奖励
-        : max(0.85, 1 - clampedRecall * 0.15); // 失败惩罚限制在 ≥0.85
-    return (stability * factor).clamp(0.5, 120.0);
-  }
-
-  // ============================================================
-  // 批量操作
-  // ============================================================
-
-  /// 批量更新卡片状态
-  static Map<int, CardState> batchUpdateCardStates(
-    Map<int, CardState> states,
-    List<Attempt> attempts,
-    int timeLimit, {
-    double slowThresholdMultiplier = 1.5,
-    SrsConfig config = const SrsConfig(),
-  }) {
-    final updatedStates = <int, CardState>{};
-
-    // 按单词ID分组答题记录
-    final attemptsByWord = <int, List<Attempt>>{};
-    for (final attempt in attempts) {
-      attemptsByWord.putIfAbsent(attempt.wordId, () => []).add(attempt);
-    }
-
-    // 为每个单词更新状态
-    for (final entry in attemptsByWord.entries) {
-      final wordId = entry.key;
-      final wordAttempts = entry.value.toList()
-        ..sort((a, b) => a.timestamp.compareTo(b.timestamp));
-
-      CardState currentState = states[wordId] ?? CardState.newCard(wordId);
-
-      for (final attempt in wordAttempts) {
-        final elapsed = attempt.timestamp.difference(currentState.lastReview);
-        final shortTermReview =
-            attempt.isInSessionRetry || elapsed < const Duration(hours: 12);
-        final calculatedQuality = calculateQuality(
-          result: attempt.result,
-          reactionTime: attempt.rtMs,
-          timeLimit: timeLimit,
-          baselineRtMs: currentState.rtP50 > 0 ? currentState.rtP50 : null,
-          slowThresholdMultiplier: slowThresholdMultiplier,
-        );
-        // 提示后的正确只代表辅助完成；在兼容旧存储路径中也把它
-        // 限制为低质量成功，避免提示题带来完整稳定度奖励。
-        final quality = attempt.usedHint && calculatedQuality >= 3
-            ? 3
-            : calculatedQuality;
-        final recallProb = estimateRecallProbability(
-          currentState,
-          at: attempt.timestamp,
-        );
-
-        currentState = updateCardState(
-          currentState,
-          quality,
-          recallProb: recallProb,
-          reviewedAt: attempt.timestamp,
-          shortTermReview: shortTermReview,
-          countFailureAsLongTerm: !attempt.isInSessionRetry,
-          config: config,
-        );
-      }
-
-      // 更新反应时间中位数（仅统计正确作答且有效反应时间，避免错误/超时拉偏基线）
-      final validRts = wordAttempts
-          .where((a) => a.result == AttemptResult.correct && a.rtMs > 0)
-          .map((a) => a.rtMs)
-          .toList();
-
-      if (validRts.isNotEmpty) {
-        validRts.sort();
-        final median = validRts.length % 2 == 0
-            ? ((validRts[validRts.length ~/ 2 - 1] +
-                          validRts[validRts.length ~/ 2]) /
-                      2)
-                  .round()
-            : validRts[validRts.length ~/ 2];
-
-        // 使用指数滑动平均（EMA 70/30）平滑更新基线，防止单次波动冲垮历史基准
-        final nextRt = currentState.rtP50 <= 0
-            ? median
-            : ((currentState.rtP50 * 0.7) + (median * 0.3)).round();
-
-        currentState = currentState.copyWith(rtP50: nextRt);
-      }
-
-      updatedStates[wordId] = currentState;
-    }
-
-    return updatedStates;
   }
 
   // ============================================================

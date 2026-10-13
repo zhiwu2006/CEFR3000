@@ -35,7 +35,6 @@ class SessionController extends StateNotifier<SessionData> {
   final bool _consumeNewOnSelection;
   final Clock _clock;
   final Future<void> Function(int) _consumeDailyNew;
-  bool _legacyStatesSaved = false;
   static const feedbackDuration = Duration(milliseconds: 800);
   Timer? _feedbackTimer;
   Duration _feedbackRemaining = Duration.zero;
@@ -137,7 +136,6 @@ class SessionController extends StateNotifier<SessionData> {
       _cancelFeedback();
       _committedEventIds.clear();
       _consumedNewWordIds.clear();
-      _legacyStatesSaved = false;
       debugPrint('=== Starting session with config: $config');
       _recallCommitService = RecallCommitService(
         progressRepository: _progressRepository,
@@ -735,7 +733,6 @@ class SessionController extends StateNotifier<SessionData> {
     _cancelFeedback();
     _committedEventIds.clear();
     _consumedNewWordIds.clear();
-    _legacyStatesSaved = false;
     _isPaused = false;
 
     // 确保候选池存在
@@ -992,15 +989,10 @@ class SessionController extends StateNotifier<SessionData> {
       final allAttempts = await _mergePersistedAttempts(
         state.attempts.where((a) => a.wordId > 0).toList(),
       );
-      if (_recallCommitService.supportsReliableCommit) {
-        for (final attempt in allAttempts) {
-          await _commitCompletedAttempt(attempt);
-        }
-      } else if (!_legacyStatesSaved && allAttempts.isNotEmpty) {
-        if (!await _updateSrsStates(allAttempts)) {
-          throw StateError('Unable to persist legacy card states');
-        }
-        _legacyStatesSaved = true;
+      // 唯一的调度路径：逐条提交给 RecallCommitService（MemoryScheduler）。
+      // 事件 ID 保证保存失败后重试不会重复应用同一次作答。
+      for (final attempt in allAttempts) {
+        await _commitCompletedAttempt(attempt);
       }
 
       if (_consumedNewWordIds.isNotEmpty) {
@@ -1076,40 +1068,6 @@ class SessionController extends StateNotifier<SessionData> {
       await store.save(checkpoint);
     } catch (e) {
       debugPrint('Error saving session checkpoint: $e');
-    }
-  }
-
-  /// 更新SRS状态
-  Future<bool> _updateSrsStates([List<Attempt>? attemptsToProcess]) async {
-    final attempts =
-        attemptsToProcess ?? state.attempts.where((a) => a.wordId > 0).toList();
-    if (attempts.isEmpty) return true;
-
-    try {
-      // 获取涉及的单词ID，并按出现顺序保持稳定
-      final wordIds = attempts.map((a) => a.wordId).toSet().toList();
-
-      // 获取当前状态，并回填缺失卡片
-      final currentStates = await _progressRepository.getCardStates(wordIds);
-      final stateMap = {for (var s in currentStates) s.wordId: s};
-      for (final id in wordIds) {
-        stateMap.putIfAbsent(id, () => CardState.newCard(id));
-      }
-
-      // 批量更新状态（显式传入 SrsConfig）
-      final updatedStates = SrsAlgorithm.batchUpdateCardStates(
-        stateMap,
-        attempts,
-        state.config.timeLimitMs,
-        slowThresholdMultiplier: state.config.slowThreshold,
-        config: state.config.srsConfig,
-      );
-
-      await _progressRepository.batchUpdateCardStates(updatedStates);
-      return true;
-    } catch (e) {
-      debugPrint('Error updating SRS states: $e');
-      return false;
     }
   }
 

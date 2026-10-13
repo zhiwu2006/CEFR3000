@@ -1,12 +1,12 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:vocab_flash_test/domain/distractor.dart';
-import 'package:vocab_flash_test/domain/srs.dart';
 import 'package:vocab_flash_test/domain/testset.dart';
 import 'package:vocab_flash_test/models/models.dart';
 import 'package:vocab_flash_test/features/study/domain/session_checkpoint.dart';
 import 'package:vocab_flash_test/features/study/data/session_checkpoint_store.dart';
 import 'package:vocab_flash_test/session/session_models.dart';
+import 'support/schedule_attempts.dart';
 
 void main() {
   group('专项优化测试：多义词干扰项防污染 (P0-1)', () {
@@ -77,11 +77,7 @@ void main() {
       );
 
       expect(
-        () => Question(
-          word: word,
-          options: ['A', 'B', 'C'],
-          correctIndex: 0,
-        ),
+        () => Question(word: word, options: ['A', 'B', 'C'], correctIndex: 0),
         throwsA(isA<ArgumentError>()),
       );
 
@@ -144,33 +140,14 @@ void main() {
       final initialCard = CardState.newCard(1).copyWith(rtP50: 1000);
 
       final attempts = [
-        Attempt.wrong(
-          wordId: 1,
-          chosenIndex: 1,
-          correctIndex: 0,
-          rtMs: 200,
-        ),
-        Attempt.timeout(
-          wordId: 1,
-          correctIndex: 0,
-        ),
-        Attempt.correct(
-          wordId: 1,
-          chosenIndex: 0,
-          correctIndex: 0,
-          rtMs: 500,
-        ),
+        Attempt.wrong(wordId: 1, chosenIndex: 1, correctIndex: 0, rtMs: 200),
+        Attempt.timeout(wordId: 1, correctIndex: 0),
+        Attempt.correct(wordId: 1, chosenIndex: 0, correctIndex: 0, rtMs: 500),
       ];
 
-      final result = SrsAlgorithm.batchUpdateCardStates(
-        {1: initialCard},
-        attempts,
-        2000,
-      );
-
-      final updated = result[1]!;
-      // 历史 rtP50=1000，本次有效正解中位数=500
-      // EMA = 1000 * 0.7 + 500 * 0.3 = 700 + 150 = 850
+      final updated = scheduleAttempts(initialCard, attempts);
+      // 答错（200ms）与超时跳过，只有独立答对按 EMA 70/30 更新：
+      // 1000*0.7 + 500*0.3 = 850
       expect(updated.rtP50, 850);
     });
   });
@@ -217,13 +194,31 @@ void main() {
     test('全量词汇正常生成每日牌组且排除不存在的孤立卡片', () {
       final generator = TestSetGenerator();
       final allWords = [
-        Word(id: 1, headword: 'a', lemma: 'a', level: 'A1', pos: 'n', cnDefs: ['A']),
-        Word(id: 2, headword: 'b', lemma: 'b', level: 'A1', pos: 'n', cnDefs: ['B']),
+        Word(
+          id: 1,
+          headword: 'a',
+          lemma: 'a',
+          level: 'A1',
+          pos: 'n',
+          cnDefs: ['A'],
+        ),
+        Word(
+          id: 2,
+          headword: 'b',
+          lemma: 'b',
+          level: 'A1',
+          pos: 'n',
+          cnDefs: ['B'],
+        ),
       ];
 
       final allStates = {
-        1: CardState.newCard(1).copyWith(due: DateTime.now().subtract(const Duration(days: 1))),
-        999: CardState.newCard(999).copyWith(due: DateTime.now().subtract(const Duration(days: 1))),
+        1: CardState.newCard(
+          1,
+        ).copyWith(due: DateTime.now().subtract(const Duration(days: 1))),
+        999: CardState.newCard(
+          999,
+        ).copyWith(due: DateTime.now().subtract(const Duration(days: 1))),
       };
 
       final deck = generator.generateDailyDeck(

@@ -1,6 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:vocab_flash_test/domain/srs.dart';
 import 'package:vocab_flash_test/models/models.dart';
+import 'support/schedule_attempts.dart';
 
 void main() {
   group('SrsAlgorithm', () {
@@ -122,11 +123,13 @@ void main() {
         Attempt.wrong(wordId: 2, rtMs: 1500, chosenIndex: 1, correctIndex: 0),
       ];
 
-      final updatedStates = SrsAlgorithm.batchUpdateCardStates(
-        states,
-        attempts,
-        2000, // timeLimit
-      );
+      final updatedStates = {
+        for (final entry in states.entries)
+          entry.key: scheduleAttempts(
+            entry.value,
+            attempts.where((a) => a.wordId == entry.key),
+          ),
+      };
 
       expect(updatedStates.length, equals(2));
       expect(updatedStates[1]!.stability, greaterThan(states[1]!.stability));

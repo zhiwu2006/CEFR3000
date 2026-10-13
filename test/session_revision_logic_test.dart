@@ -3,6 +3,7 @@ import 'package:vocab_flash_test/domain/srs.dart';
 import 'package:vocab_flash_test/models/models.dart';
 import 'package:vocab_flash_test/session/delayed_replay_manager.dart';
 import 'package:vocab_flash_test/session/session_models.dart';
+import 'support/schedule_attempts.dart';
 
 void main() {
   final config = SessionConfig.defaultConfig.copyWith(
@@ -216,19 +217,15 @@ void main() {
           1,
           now: start,
         ).copyWith(longTermReviews: 1);
-        final updated = SrsAlgorithm.batchUpdateCardStates(
-          {1: state},
-          [
-            attempt(wordId: 1, result: AttemptResult.wrong, timestamp: start),
-            attempt(
-              wordId: 1,
-              result: AttemptResult.correct,
-              timestamp: start.add(const Duration(minutes: 1)),
-              kind: AttemptKind.inSessionRetry,
-            ),
-          ],
-          2000,
-        )[1]!;
+        final updated = scheduleAttempts(state, [
+          attempt(wordId: 1, result: AttemptResult.wrong, timestamp: start),
+          attempt(
+            wordId: 1,
+            result: AttemptResult.correct,
+            timestamp: start.add(const Duration(minutes: 1)),
+            kind: AttemptKind.inSessionRetry,
+          ),
+        ]);
 
         expect(updated.lapses, 1);
         expect(updated.longTermReviews, 1);

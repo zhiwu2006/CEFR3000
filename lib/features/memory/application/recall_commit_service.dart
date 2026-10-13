@@ -102,7 +102,7 @@ class RecallCommitService {
     final recognitionState =
         existingState ??
         CardState.newCard(attempt.wordId, now: attempt.timestamp);
-    final evidence = _evidenceFromAttempt(
+    final evidence = evidenceFromAttempt(
       sessionId: sessionId,
       eventId: eventId,
       attempt: attempt,
@@ -291,7 +291,8 @@ class RecallCommitService {
       '${date.month.toString().padLeft(2, '0')}-'
       '${date.day.toString().padLeft(2, '0')}';
 
-  RecallEvidence _evidenceFromAttempt({
+  /// 把一次作答转换成调度证据（纯函数，测试与离线重放复用同一套规则）。
+  static RecallEvidence evidenceFromAttempt({
     required String sessionId,
     required String eventId,
     required Attempt attempt,
