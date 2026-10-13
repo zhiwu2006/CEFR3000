@@ -23,12 +23,9 @@ class FlutterTtsService implements TtsService {
   Future<void> _initialize(String locale) async {
     _flutterTts = FlutterTts();
 
-    // 尝试设置谷歌TTS引擎（仅Android有效，提供更高质量语音）
-    try {
-      await _flutterTts.setEngine("com.google.android.tts");
-    } catch (_) {
-      // 忽略错误，某些设备可能没有安装谷歌TTS
-    }
+    // 使用系统默认语音引擎。不再强制 setEngine：它会让插件重新绑定引擎，
+    // 随后的 setLanguage 等调用与重绑抢跑，日志里会出现
+    // "not bound to TTS engine"，首个单词也可能没有声音。
 
     // 设置默认参数
     await _flutterTts.setLanguage(locale);

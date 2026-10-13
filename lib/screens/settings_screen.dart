@@ -1003,6 +1003,15 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     );
   }
 
+  Widget _buildTtsPreviewButton(BuildContext context, WidgetRef ref) {
+    return ListTile(
+      leading: const Icon(Icons.volume_up_outlined),
+      title: const Text('试听发音'),
+      subtitle: const Text('听不到时检查媒体音量，或在系统设置里安装英文语音包'),
+      onTap: () => ref.read(ttsServiceProvider).speak('Hello, vocabulary'),
+    );
+  }
+
   Widget _buildTtsOnWrongSwitch(
     BuildContext context,
     WidgetRef ref,
@@ -2166,6 +2175,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
         _buildSection(context, 'TTS 语音', [
           _buildTtsAutoPlaySwitch(context, ref, settings),
           _buildTtsOnWrongSwitch(context, ref, settings),
+          _buildTtsPreviewButton(context, ref),
           _buildTtsLocaleSelector(context, ref, settings),
           _buildTtsRateSlider(context, ref, settings),
           _buildTtsPitchSlider(context, ref, settings),
@@ -2264,6 +2274,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             _buildSection(context, 'TTS 语音', [
               _buildTtsAutoPlaySwitch(context, ref, settings),
               _buildTtsOnWrongSwitch(context, ref, settings),
+              _buildTtsPreviewButton(context, ref),
               _buildTtsLocaleSelector(context, ref, settings),
               _buildTtsRateSlider(context, ref, settings),
               _buildTtsPitchSlider(context, ref, settings),

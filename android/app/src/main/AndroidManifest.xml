@@ -38,6 +38,11 @@
 
          In particular, this is used by the Flutter engine in io.flutter.plugin.text.ProcessTextPlugin. -->
     <queries>
+        <!-- Android 11+ 的软件包可见性：不声明就看不到系统语音引擎，
+             TextToSpeech 会报 "not bound to TTS engine"（联想平板上实测）。 -->
+        <intent>
+            <action android:name="android.intent.action.TTS_SERVICE"/>
+        </intent>
         <intent>
             <action android:name="android.intent.action.PROCESS_TEXT"/>
             <data android:mimeType="text/plain"/>
