@@ -415,6 +415,11 @@ void main() {
     testWidgets('HomeScreen 核心入口与动态当前日期渲染正常', (tester) async {
       SharedPreferences.setMockInitialValues({'app_settings': '{}'});
       final prefs = await SharedPreferences.getInstance();
+      // 手机布局（最短边 < 600dp）；默认 800x600 会命中平板布局。
+      // 宽度取 550dp：测试字体是等宽方块，比真机字体宽，窄屏会误报标题栏溢出。
+      tester.view.physicalSize = const Size(1650, 3000);
+      tester.view.devicePixelRatio = 3.0;
+      addTearDown(tester.view.reset);
 
       await tester.pumpWidget(
         ProviderScope(
@@ -455,6 +460,48 @@ void main() {
       final d = now.day.toString().padLeft(2, '0');
       final dateString = '$y/$m/$d';
       expect(find.textContaining(dateString), findsOneWidget);
+    });
+
+    testWidgets('平板横屏显示导航栏、学习记录与今日行动栏', (tester) async {
+      SharedPreferences.setMockInitialValues({'app_settings': '{}'});
+      final prefs = await SharedPreferences.getInstance();
+      // 联想 TB138FC 横屏：1280x768dp。
+      tester.view.physicalSize = const Size(2560, 1536);
+      tester.view.devicePixelRatio = 2.0;
+      addTearDown(tester.view.reset);
+
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            sharedPreferencesProvider.overrideWith((ref) async => prefs),
+            progressRepositoryProvider.overrideWithValue(
+              _AuditFakeProgressRepository(),
+            ),
+            wordRepositoryProvider.overrideWithValue(
+              _AuditFakeWordRepository(testWords),
+            ),
+            todayDeckProvider.overrideWith((ref) async => testWords),
+            todayStudyPlanProvider.overrideWith(
+              (ref) async => StudyPlan(
+                createdAt: DateTime.now(),
+                items: const [],
+                newItemCount: 0,
+                estimatedSeconds: 0,
+              ),
+            ),
+          ],
+          child: const MaterialApp(home: HomeScreen()),
+        ),
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 100));
+
+      expect(find.byType(NavigationRail), findsOneWidget);
+      expect(find.text('学习记录'), findsOneWidget);
+      expect(find.text('连续打卡'), findsOneWidget);
+      expect(find.text('开始学习'), findsOneWidget);
+      expect(find.text('主动回忆'), findsOneWidget);
+      expect(tester.takeException(), isNull);
     });
   });
 }

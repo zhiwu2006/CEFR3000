@@ -9,6 +9,7 @@ import '../theme/digitalism_theme.dart';
 import '../session/session_models.dart';
 import 'active_recall_screen.dart';
 import 'production_recall_screen.dart';
+import 'home/tablet_home_layout.dart';
 
 /// 主页面 - 支持多主题风格
 class HomeScreen extends ConsumerWidget {
@@ -22,6 +23,8 @@ class HomeScreen extends ConsumerWidget {
     final gradientColors = ThemeManager.getGradientColors(themeStyle);
     final headerTextColor = ThemeManager.getHeaderTextColor(themeStyle);
     final isDark = ThemeManager.isDarkTheme(themeStyle);
+    // 按最短边判断平板，避免手机横屏误用平板布局。
+    final isTablet = MediaQuery.sizeOf(context).shortestSide >= 600;
 
     final scaffoldBody = Container(
       decoration: BoxDecoration(
@@ -37,37 +40,57 @@ class HomeScreen extends ConsumerWidget {
             : null,
       ),
       child: SafeArea(
-        child: Column(
-          children: [
-            // 自定义应用栏
-            _buildCustomAppBar(context, theme, themeStyle, headerTextColor),
-
-            // 主要内容
-            Expanded(
-              child: ref
-                  .watch(todayDeckProvider)
-                  .when(
-                    data: (words) => _buildCardGridContent(
-                      context,
-                      theme,
-                      ref,
-                      settings,
-                      words,
-                      themeStyle,
-                    ),
-                    loading: () => Center(
-                      child: CircularProgressIndicator(
-                        valueColor: AlwaysStoppedAnimation<Color>(
-                          isDark ? Colors.white : theme.colorScheme.primary,
-                        ),
-                      ),
-                    ),
-                    error: (error, stack) =>
-                        _buildErrorContent(context, theme, error, themeStyle),
+        child: isTablet
+            ? TabletHomeLayout(
+                themeStyle: themeStyle,
+                wordCount:
+                    ref.watch(todayDeckProvider).asData?.value.length ?? 0,
+                onStartTest: () => _startTest(context, ref),
+                onStartProduction: () => _startProduction(context, ref),
+                onStartPlan: (wordIds) => _startPlan(context, ref, wordIds),
+              )
+            : Column(
+                children: [
+                  // 自定义应用栏
+                  _buildCustomAppBar(
+                    context,
+                    theme,
+                    themeStyle,
+                    headerTextColor,
                   ),
-            ),
-          ],
-        ),
+
+                  // 主要内容
+                  Expanded(
+                    child: ref
+                        .watch(todayDeckProvider)
+                        .when(
+                          data: (words) => _buildCardGridContent(
+                            context,
+                            theme,
+                            ref,
+                            settings,
+                            words,
+                            themeStyle,
+                          ),
+                          loading: () => Center(
+                            child: CircularProgressIndicator(
+                              valueColor: AlwaysStoppedAnimation<Color>(
+                                isDark
+                                    ? Colors.white
+                                    : theme.colorScheme.primary,
+                              ),
+                            ),
+                          ),
+                          error: (error, stack) => _buildErrorContent(
+                            context,
+                            theme,
+                            error,
+                            themeStyle,
+                          ),
+                        ),
+                  ),
+                ],
+              ),
       ),
     );
 
@@ -369,21 +392,7 @@ class HomeScreen extends ConsumerWidget {
             tooltip: '开始今日计划',
             icon: const Icon(Icons.arrow_forward_ios, size: 16),
             color: textColor,
-            onPressed: () {
-              final settings = ref.read(appSettingsProvider);
-              Navigator.of(context).pushNamed(
-                '/recall',
-                arguments: ActiveRecallArgs(
-                  config: SessionConfig.fromAppSettings(settings).copyWith(
-                    plannedWordIds: wordIds,
-                    wordsPerSession: wordIds.isEmpty
-                        ? settings.wordsPerSession
-                        : wordIds.length,
-                  ),
-                  wordIds: wordIds,
-                ),
-              );
-            },
+            onPressed: () => _startPlan(context, ref, wordIds),
           ),
         ],
       ),
@@ -577,6 +586,22 @@ class HomeScreen extends ConsumerWidget {
   }
 
   static bool _isNavigating = false;
+
+  void _startPlan(BuildContext context, WidgetRef ref, List<int> wordIds) {
+    final settings = ref.read(appSettingsProvider);
+    Navigator.of(context).pushNamed(
+      '/recall',
+      arguments: ActiveRecallArgs(
+        config: SessionConfig.fromAppSettings(settings).copyWith(
+          plannedWordIds: wordIds,
+          wordsPerSession: wordIds.isEmpty
+              ? settings.wordsPerSession
+              : wordIds.length,
+        ),
+        wordIds: wordIds,
+      ),
+    );
+  }
 
   void _startTest(BuildContext context, WidgetRef ref) {
     if (_isNavigating) return;

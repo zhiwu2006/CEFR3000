@@ -2,6 +2,8 @@ import 'dart:io';
 import 'dart:async';
 import 'dart:math';
 
+import '../features/progress/domain/daily_records.dart';
+
 import 'package:flutter/foundation.dart';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -295,11 +297,19 @@ final learningStatsProvider = FutureProvider.autoDispose<Map<String, dynamic>>((
 
   try {
     // 从数据库获取学习统计
-    final dbStats = await progressRepo.getLearningStats(
-      policy: LeechPolicy(
-        lapsesThreshold: settings.leechLapsesThreshold,
-        includeMarked: settings.leechIncludeMarked,
-      ),
+    final leechPolicy = LeechPolicy(
+      lapsesThreshold: settings.leechLapsesThreshold,
+      includeMarked: settings.leechIncludeMarked,
+    );
+    final dbStats = await progressRepo.getLearningStats(policy: leechPolicy);
+
+    // 「待复习」「疑难词」只统计当前选择的级别：范围外的旧词既不会进入
+    // 今日计划，也不应让首页数字虚高。
+    final levelWords = await ref
+        .read(wordRepositoryProvider)
+        .loadByLevels(settings.selectedLevelsSet);
+    final levelStates = await progressRepo.getCardStates(
+      levelWords.map((word) => word.id).toList(),
     );
 
     // 获取测试历史来计算今日测试数
@@ -341,6 +351,9 @@ final learningStatsProvider = FutureProvider.autoDispose<Map<String, dynamic>>((
       'dueCards': dbStats['dueCards'] ?? 0,
       'leechCards': dbStats['leechCards'] ?? 0,
       'streakDays': dbStats['streakDays'] ?? 0,
+      'levelCards': levelStates.length,
+      'levelDueCards': levelStates.where((state) => state.isDue).length,
+      'levelLeechCards': levelStates.where(leechPolicy.isLeech).length,
       'longestStreakDays': dbStats['longestStreakDays'] ?? 0,
       'totalStudyDays': dbStats['totalStudyDays'] ?? 0,
       'checkedInToday': dbStats['checkedInToday'] ?? false,
@@ -388,6 +401,9 @@ final learningStatsProvider = FutureProvider.autoDispose<Map<String, dynamic>>((
       'dueCards': 0,
       'leechCards': 0,
       'streakDays': 0,
+      'levelCards': 0,
+      'levelDueCards': 0,
+      'levelLeechCards': 0,
       'longestStreakDays': 0,
       'totalStudyDays': 0,
       'checkedInToday': false,
@@ -402,6 +418,17 @@ final learningStatsProvider = FutureProvider.autoDispose<Map<String, dynamic>>((
 final testRunHistoryProvider = FutureProvider<List<TestRun>>((ref) async {
   final repo = ref.read(progressRepositoryProvider);
   return await repo.getTestRunHistory();
+});
+
+/// 平板首页学习记录：按自然日汇总全部已完成轮次。
+final dailyRecordsProvider = FutureProvider.autoDispose<List<DailyRecord>>((
+  ref,
+) async {
+  await ref.watch(initializationProvider.future);
+  // 跟随统计刷新：完成一轮后 learningStatsProvider 会失效，这里一起重算。
+  ref.watch(learningStatsProvider);
+  final repo = ref.read(progressRepositoryProvider);
+  return DailyRecord.fromRuns(await repo.getTestRunHistory(limit: 100000));
 });
 
 Future<void> _measureStartup(
