@@ -7,6 +7,6 @@ workers_dev = true
 [[d1_databases]]
 binding = "DB"
 database_name = "vocab-flash-sync"
-database_id = "REPLACE_WITH_D1_DATABASE_ID"
+database_id = "51412664-2853-464c-9fa1-a90381b09adc"
 
 # 同步密钥不写在这里，用 `wrangler secret put SYNC_TOKEN` 设置（至少 32 个字符）。
