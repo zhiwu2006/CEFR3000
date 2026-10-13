@@ -32,9 +32,7 @@ class _TestScreenState extends ConsumerState<TestScreen>
     with WidgetsBindingObserver {
   SessionController? _sessionController;
   bool _navigatedToSummary = false;
-  bool _resumeWhenForeground = false;
   bool _leavingTestPage = false;
-  Timer? _resumeDelayTimer;
 
   @override
   void initState() {
@@ -56,10 +54,8 @@ class _TestScreenState extends ConsumerState<TestScreen>
             activeSession.state == SessionState.resolved ||
             activeSession.state == SessionState.saveFailed)) {
       // 从首页返回时保留原题目、答题记录和暂停状态，不能重新选词覆盖它们。
-      // 返回手势在部分 Android 版本会额外发送 resumed 回调，因此这里
-      // 强制重新暂停，保证恢复页至少展示两秒暂停状态。
+      // 保持暂停，等用户点按继续：自动恢复会在没人看着时把题目记成超时。
       _sessionController?.pauseSession();
-      _resumeAfterBriefPause();
       return;
     }
     final store = await ref.read(sessionCheckpointStoreProvider.future);
@@ -81,6 +77,8 @@ class _TestScreenState extends ConsumerState<TestScreen>
         currentProgress: checkpoint.currentProgress,
         checkpoint: checkpoint,
       );
+      // 进程重启后恢复的一轮同样先暂停，用户确认回到原题后再计时。
+      _sessionController?.pauseSession();
     } else {
       await _sessionController?.startSession(widget.config);
     }
@@ -89,8 +87,6 @@ class _TestScreenState extends ConsumerState<TestScreen>
   @override
   void dispose() {
     // 离开测试页只是暂停；整轮完成前不保存学习记录，也不丢弃会话。
-    _resumeWhenForeground = false;
-    _resumeDelayTimer?.cancel();
     _sessionController?.pauseSession();
     WidgetsBinding.instance.removeObserver(this);
     super.dispose();
@@ -111,25 +107,12 @@ class _TestScreenState extends ConsumerState<TestScreen>
       case AppLifecycleState.inactive:
       case AppLifecycleState.hidden:
       case AppLifecycleState.detached:
-        _resumeDelayTimer?.cancel();
-        _resumeWhenForeground = true;
         sessionController.pauseSession();
         break;
       case AppLifecycleState.resumed:
-        if (_resumeWhenForeground) {
-          _resumeWhenForeground = false;
-          _resumeAfterBriefPause();
-        }
+        // 回到前台保持暂停，由用户点按遮罩继续。
         break;
     }
-  }
-
-  /// 返回测试页时先保持暂停遮罩两秒，让用户确认已回到原题后再继续。
-  void _resumeAfterBriefPause() {
-    _resumeDelayTimer?.cancel();
-    _resumeDelayTimer = Timer(const Duration(seconds: 2), () {
-      if (mounted) _sessionController?.resumeSession();
-    });
   }
 
   @override
@@ -205,8 +188,6 @@ class _TestScreenState extends ConsumerState<TestScreen>
       return false;
     }
     _leavingTestPage = true;
-    _resumeWhenForeground = false;
-    _resumeDelayTimer?.cancel();
     controller.pauseSession();
     return true;
   }
@@ -527,6 +508,7 @@ class _TestScreenState extends ConsumerState<TestScreen>
         );
         final currentSessionData = ref.read(sessionControllerProvider);
         final isPaused = currentSessionData.isPaused;
+        final pausedForIdle = currentSessionData.pausedForIdle;
         final data = currentSessionData;
         final activeQuestion = data.currentQuestion ?? question;
 
@@ -776,7 +758,7 @@ class _TestScreenState extends ConsumerState<TestScreen>
                                   ),
                                   const SizedBox(height: 16),
                                   Text(
-                                    '已暂停',
+                                    pausedForIdle ? '连续超时，已自动暂停' : '已暂停',
                                     style: theme.textTheme.headlineSmall
                                         ?.copyWith(
                                           color: textColor,
@@ -785,7 +767,10 @@ class _TestScreenState extends ConsumerState<TestScreen>
                                   ),
                                   const SizedBox(height: 8),
                                   Text(
-                                    '点击任意位置继续',
+                                    pausedForIdle
+                                        ? '这几题没有作答，记录已保留。点击任意位置继续'
+                                        : '点击任意位置继续',
+                                    textAlign: TextAlign.center,
                                     style: theme.textTheme.bodyMedium?.copyWith(
                                       color: textColor.withValues(alpha: 0.7),
                                     ),
@@ -836,6 +821,7 @@ class _TestScreenState extends ConsumerState<TestScreen>
         );
         final currentSessionData = ref.read(sessionControllerProvider);
         final isPaused = currentSessionData.isPaused;
+        final pausedForIdle = currentSessionData.pausedForIdle;
         final data = currentSessionData;
         final activeQuestion = data.currentQuestion ?? question;
 
@@ -1055,7 +1041,7 @@ class _TestScreenState extends ConsumerState<TestScreen>
                               ),
                               const SizedBox(height: 24),
                               Text(
-                                '已暂停',
+                                pausedForIdle ? '连续超时，已自动暂停' : '已暂停',
                                 style: theme.textTheme.headlineMedium?.copyWith(
                                   color: textColor,
                                   fontWeight: FontWeight.bold,
@@ -1063,7 +1049,10 @@ class _TestScreenState extends ConsumerState<TestScreen>
                               ),
                               const SizedBox(height: 12),
                               Text(
-                                '点击任意位置继续',
+                                pausedForIdle
+                                    ? '这几题没有作答，记录已保留。点击任意位置继续'
+                                    : '点击任意位置继续',
+                                textAlign: TextAlign.center,
                                 style: theme.textTheme.bodyLarge?.copyWith(
                                   color: textColor.withValues(alpha: 0.7),
                                 ),

@@ -407,6 +407,30 @@ void main() {
     },
   );
 
+  testWidgets('three timeouts in a row pause the round as idle', (
+    tester,
+  ) async {
+    final c = _controller(tester, _Progress());
+    await c.startSession(config([1, 2, 3, 4]));
+    for (var i = 0; i < SessionController.idlePauseAfterTimeouts; i++) {
+      expect(c.state.state, SessionState.waiting);
+      await tester.pump(Duration(milliseconds: c.state.millisLeft + 50));
+      if (i < SessionController.idlePauseAfterTimeouts - 1) {
+        await tester.pump(SessionController.feedbackDuration);
+      }
+    }
+    expect(c.state.isPaused, isTrue);
+    expect(c.state.pausedForIdle, isTrue);
+    final answered = c.state.attempts.length;
+    await tester.pump(const Duration(seconds: 30));
+    expect(c.state.attempts.length, answered);
+    c.resumeSession();
+    expect(c.state.pausedForIdle, isFalse);
+    await tester.pump(SessionController.feedbackDuration);
+    expect(c.state.state, SessionState.waiting);
+    c.dispose();
+  });
+
   testWidgets(
     'only completion saves; slow save and retry do not lose or double-commit answers',
     (tester) async {
@@ -450,7 +474,7 @@ void main() {
   );
 
   testWidgets(
-    'screen lifecycle pauses for two seconds before foreground resume without saving',
+    'screen lifecycle pauses and stays paused until the learner resumes',
     (tester) async {
       tester.view.physicalSize = const Size(480, 1040);
       tester.view.devicePixelRatio = 1;
@@ -482,9 +506,11 @@ void main() {
       await tester.pump(const Duration(seconds: 1));
       expect(c.state.isPaused, isTrue);
       tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
-      await tester.pump(const Duration(milliseconds: 1999));
+      // 回到前台不自动计时：无人作答时自动恢复会把题目记成超时。
+      await tester.pump(const Duration(seconds: 10));
       expect(c.state.isPaused, isTrue);
-      await tester.pump(const Duration(milliseconds: 1));
+      expect(c.state.attempts, hasLength(1));
+      c.resumeSession();
       expect(c.state.isPaused, isFalse);
       expect(c.state.state, SessionState.resolved);
       await tester.pump(const Duration(milliseconds: 800));

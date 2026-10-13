@@ -298,6 +298,9 @@ class SessionData {
   final String sessionId; // 会话ID
   final SessionConfig config; // 会话配置
   final bool isPaused; // 是否暂停中
+
+  /// 连续超时触发的自动暂停：多半是人离开了，遮罩上说明原因。
+  final bool pausedForIdle;
   final int initialProgressOffset; // 初始进度偏移量（用于恢复会话时反映历史进度，免注入虚拟脏数据）
   /// 本轮会话的目标单词总量（去重）。若未显式指定则降级为 config.wordsPerSession。
   final int? _totalWords;
@@ -325,6 +328,7 @@ class SessionData {
     required this.sessionId,
     required this.config,
     this.isPaused = false,
+    this.pausedForIdle = false,
     this.initialProgressOffset = 0,
     int? totalWords,
     this.retryCounts = const {},
@@ -578,9 +582,8 @@ class SessionData {
       .toList(growable: false);
 
   /// 只计算倒计时实际消耗的时间，暂停或后台停留不会被计入。
-  int get activeReactionTimeMs => (currentTimeLimitMs - millisLeft)
-      .clamp(0, currentTimeLimitMs)
-      .toInt();
+  int get activeReactionTimeMs =>
+      (currentTimeLimitMs - millisLeft).clamp(0, currentTimeLimitMs).toInt();
 
   /// 复制并修改指定字段
   SessionData copyWith({
@@ -597,6 +600,7 @@ class SessionData {
     String? sessionId,
     SessionConfig? config,
     bool? isPaused,
+    bool? pausedForIdle,
     int? initialProgressOffset,
     int? totalWords,
     Map<int, int>? retryCounts,
@@ -617,6 +621,7 @@ class SessionData {
     sessionId: sessionId ?? this.sessionId,
     config: config ?? this.config,
     isPaused: isPaused ?? this.isPaused,
+    pausedForIdle: pausedForIdle ?? this.pausedForIdle,
     initialProgressOffset: initialProgressOffset ?? this.initialProgressOffset,
     totalWords: totalWords ?? this.totalWords,
     retryCounts: retryCounts ?? this.retryCounts,

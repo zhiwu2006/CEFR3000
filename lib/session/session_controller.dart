@@ -57,6 +57,11 @@ class SessionController extends StateNotifier<SessionData> {
   bool _isPaused = false;
   bool _pendingNextQuestion = false;
 
+  /// 连续超时这么多题就自动暂停：屏幕常亮而人不在时，计时器会把整轮
+  /// 都记成超时，污染复习记录。
+  static const idlePauseAfterTimeouts = 3;
+  int _consecutiveTimeouts = 0;
+
   /// 每答完多少题落一次检查点。
   ///
   /// 检查点原先只在 `pauseSession()`（退到后台）时写入，答题过程中不留任何
@@ -155,6 +160,7 @@ class SessionController extends StateNotifier<SessionData> {
       _isPaused = false;
       _pendingNextQuestion = false;
       _questionsSinceCheckpoint = 0;
+      _consecutiveTimeouts = 0;
 
       // 记录上一轮出现过的单词，优先避开
       Set<int> recentWordIds = {};
@@ -585,6 +591,12 @@ class SessionController extends StateNotifier<SessionData> {
     _maybeSaveCheckpoint();
     _feedbackRemaining = feedbackDuration;
     _pendingNextQuestion = true;
+    _consecutiveTimeouts = attempt.isTimeout ? _consecutiveTimeouts + 1 : 0;
+    if (_consecutiveTimeouts >= idlePauseAfterTimeouts) {
+      _consecutiveTimeouts = 0;
+      pauseSession(forIdle: true);
+      return;
+    }
     _scheduleNextQuestion();
   }
 
@@ -1149,7 +1161,7 @@ class SessionController extends StateNotifier<SessionData> {
   }
 
   /// 暂停会话
-  void pauseSession() {
+  void pauseSession({bool forIdle = false}) {
     if (_isPaused ||
         (state.state != SessionState.waiting &&
             state.state != SessionState.resolved &&
@@ -1165,7 +1177,7 @@ class SessionController extends StateNotifier<SessionData> {
     _ttsService.stop().catchError((error) {
       debugPrint('Error stopping TTS during pause: $error');
     });
-    state = state.copyWith(isPaused: true);
+    state = state.copyWith(isPaused: true, pausedForIdle: forIdle);
     // Persist the in-memory queue and attempts when the app/page is paused so
     // an OS process kill can resume the exact question instead of losing the
     // whole unfinished round. This does not commit SRS/progress records.
@@ -1179,7 +1191,8 @@ class SessionController extends StateNotifier<SessionData> {
     if (!_isPaused) return;
     debugPrint('Resuming session - current state: ${state.state}');
     _isPaused = false;
-    state = state.copyWith(isPaused: false);
+    _consecutiveTimeouts = 0;
+    state = state.copyWith(isPaused: false, pausedForIdle: false);
 
     if (_pendingNextQuestion) {
       _scheduleNextQuestion();
