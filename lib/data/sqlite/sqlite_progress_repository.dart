@@ -1260,8 +1260,9 @@ class SqliteProgressRepository
     final latest = <int, WordFlagChange>{};
     for (final change in changes) {
       final seen = latest[change.wordId];
-      if (seen == null || change.isNewerThan(seen))
+      if (seen == null || change.isNewerThan(seen)) {
         latest[change.wordId] = change;
+      }
     }
     return _db.transaction((txn) async {
       var changed = 0;
