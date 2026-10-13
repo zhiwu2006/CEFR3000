@@ -4,6 +4,7 @@ import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../../data/secure_credential_store.dart';
@@ -188,7 +189,50 @@ class CloudSyncController extends StateNotifier<CloudSyncState> {
     } catch (error) {
       debugPrint('Cloud sync config unavailable: $error');
     }
+    await importConfigFile();
   }
+
+  /// 从应用专属目录导入 `sync_config.json`（{"url": ..., "token": ...}），
+  /// 用来避免在设备上手输 64 位密钥：`adb push` 到
+  /// /sdcard/Android/data/<包名>/files/ 后启动应用即可。
+  /// 读到后立即删除文件，密钥只保存在系统安全存储里。
+  Future<bool> importConfigFile() async {
+    final File file;
+    try {
+      final dir = await getExternalStorageDirectory();
+      if (dir == null) return false;
+      file = File('${dir.path}/$configFileName');
+      if (!await file.exists()) return false;
+    } catch (error) {
+      debugPrint('Sync config file unavailable: $error');
+      return false;
+    }
+    String url = '';
+    String token = '';
+    try {
+      final json = jsonDecode(await file.readAsString()) as Map;
+      url = '${json['url'] ?? ''}';
+      token = '${json['token'] ?? ''}';
+    } catch (error) {
+      debugPrint('Sync config file unreadable: $error');
+    } finally {
+      try {
+        await file.delete();
+      } catch (error) {
+        debugPrint('Unable to delete sync config file: $error');
+      }
+    }
+    if (url.isEmpty || token.isEmpty) {
+      if (mounted) {
+        state = state.copyWith(clearMessages: true, error: '同步配置文件格式不对');
+      }
+      return false;
+    }
+    await connect(url, token);
+    return state.configured;
+  }
+
+  static const configFileName = 'sync_config.json';
 
   /// 校验地址与密钥后保存，并立即同步一次。
   Future<void> connect(String rawUrl, String rawToken) async {
@@ -196,15 +240,26 @@ class CloudSyncController extends StateNotifier<CloudSyncState> {
     var text = rawUrl.trim();
     if (text.isNotEmpty && !text.contains('://')) text = 'https://$text';
     final url = Uri.tryParse(text);
-    if (url == null || !url.hasAuthority || url.scheme != 'https') {
+    // 只接受 ASCII 主机名：输入法替换出的全角符号会让请求阶段才抛出难懂的错误。
+    final validHost =
+        url != null &&
+        url.host.contains('.') &&
+        RegExp(r'^[A-Za-z0-9.-]+$').hasMatch(url.host);
+    if (url == null ||
+        !url.hasAuthority ||
+        url.scheme != 'https' ||
+        !validHost) {
       state = state.copyWith(
         clearMessages: true,
         error: '请输入 https:// 开头的 Worker 地址',
       );
       return;
     }
-    if (token.length < 32) {
-      state = state.copyWith(clearMessages: true, error: '同步密钥至少 32 个字符');
+    if (token.length < 32 || !RegExp(r'^[\x21-\x7E]+$').hasMatch(token)) {
+      state = state.copyWith(
+        clearMessages: true,
+        error: '同步密钥至少 32 个字符，只能包含英文字母、数字和符号',
+      );
       return;
     }
     state = state.copyWith(busy: true, clearMessages: true);
