@@ -1,0 +1,12 @@
+name = "vocab-flash-sync"
+main = "src/index.js"
+compatibility_date = "2026-09-01"
+workers_dev = true
+
+# 部署前用 `wrangler d1 create vocab-flash-sync` 创建数据库，把返回的 database_id 填到这里。
+[[d1_databases]]
+binding = "DB"
+database_name = "vocab-flash-sync"
+database_id = "REPLACE_WITH_D1_DATABASE_ID"
+
+# 同步密钥不写在这里，用 `wrangler secret put SYNC_TOKEN` 设置（至少 32 个字符）。

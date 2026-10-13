@@ -1,11 +1,13 @@
+import 'package:flutter/foundation.dart';
+
 import '../../../models/exposure_event.dart';
 import '../../../models/review_event.dart';
 import '../../../models/test_run.dart';
 import '../domain/sync_repository.dart';
 
-/// 云端表的最小读写接口，便于在测试里替换 Supabase。
+/// 云端表的最小读写接口，便于在测试里替换真实服务。
 abstract interface class SyncRemote {
-  /// 按主键 (user_id, id) 插入；[updateExisting] 为 false 时已存在的行保持不变。
+  /// 按 id 插入；[updateExisting] 为 false 时已存在的行保持不变。
   Future<void> upsert(
     String table,
     List<Map<String, dynamic>> rows, {
@@ -39,9 +41,9 @@ class SyncReport {
 
 /// 把本地学习事实推到云端，再把其它设备的新记录拉回本地合并。
 class CloudSyncService {
-  static const eventsTable = 'sync_review_events';
-  static const exposuresTable = 'sync_exposure_events';
-  static const runsTable = 'sync_test_runs';
+  static const eventsTable = 'review_events';
+  static const exposuresTable = 'exposure_events';
+  static const runsTable = 'test_runs';
 
   /// 拉取时向前回看一段时间，覆盖云端并发提交造成的 updated_at 先后错位；
   /// 重复拉到的行在合并时按 id 去重。
@@ -49,20 +51,25 @@ class CloudSyncService {
 
   final SyncableProgressRepository repository;
   final SyncRemote remote;
-  final String userId;
+
+  /// 同步目标的标识（如服务地址）；游标按它区分。
+  final String accountKey;
   final DateTime Function() now;
   final int pageSize;
+
+  /// 最近一次同步里因无法解析而跳过的远程行数。
+  int skippedRows = 0;
 
   CloudSyncService({
     required this.repository,
     required this.remote,
-    required this.userId,
+    required this.accountKey,
     DateTime Function()? now,
     this.pageSize = 500,
   }) : now = now ?? DateTime.now;
 
-  /// 游标按账号区分：同一设备换账号登录不会把上一个账号的进度当成已同步。
-  String _key(String name) => '$userId:$name';
+  /// 游标按同步目标区分：换一个服务地址不会把旧目标的进度当成已同步。
+  String _key(String name) => '$accountKey:$name';
 
   Future<SyncReport> syncNow() async {
     final pushed = await _push();
@@ -131,14 +138,9 @@ class CloudSyncService {
       return SyncMergeResult.empty;
     }
     final result = await repository.mergeSyncedData(
-      events: [
-        for (final row in eventRows.rows) ReviewEvent.fromJson(_payload(row)),
-      ],
-      exposures: [
-        for (final row in exposureRows.rows)
-          ExposureEvent.fromJson(_payload(row)),
-      ],
-      runs: [for (final row in runRows.rows) TestRun.fromJson(_payload(row))],
+      events: _decodeAll(eventRows.rows, ReviewEvent.fromJson),
+      exposures: _decodeAll(exposureRows.rows, ExposureEvent.fromJson),
+      runs: _decodeAll(runRows.rows, TestRun.fromJson),
     );
     // 合并成功后才推进游标；中途失败下次会重新拉取同一批。
     for (final (name, fetched) in [
@@ -183,7 +185,6 @@ class CloudSyncService {
   }
 
   Map<String, dynamic> _eventRow(ReviewEvent event) => {
-    'user_id': userId,
     'id': event.id,
     'word_id': event.attempt.wordId,
     'created_at': event.createdAt.toUtc().toIso8601String(),
@@ -191,7 +192,6 @@ class CloudSyncService {
   };
 
   Map<String, dynamic> _exposureRow(ExposureEvent event) => {
-    'user_id': userId,
     'id': event.id,
     'word_id': event.wordId,
     'local_date': event.localDate,
@@ -199,7 +199,6 @@ class CloudSyncService {
   };
 
   Map<String, dynamic> _runRow(TestRun run) => {
-    'user_id': userId,
     'id': run.id,
     'started_at': run.startedAt.toUtc().toIso8601String(),
     'finished_at': run.finishedAt?.toUtc().toIso8601String(),
@@ -208,6 +207,23 @@ class CloudSyncService {
 
   static Map<String, dynamic> _payload(Map<String, dynamic> row) =>
       Map<String, dynamic>.from(row['payload'] as Map);
+
+  /// 逐行解析；坏行跳过并计数，不能让一条损坏的数据永久卡住同步。
+  List<T> _decodeAll<T>(
+    List<Map<String, dynamic>> rows,
+    T Function(Map<String, dynamic>) decode,
+  ) {
+    final decoded = <T>[];
+    for (final row in rows) {
+      try {
+        decoded.add(decode(_payload(row)));
+      } catch (error) {
+        skippedRows++;
+        debugPrint('Skipping unreadable sync row: $error');
+      }
+    }
+    return decoded;
+  }
 
   Future<int> _intMeta(String name) async =>
       int.tryParse(await repository.getSyncMeta(_key(name)) ?? '') ?? 0;

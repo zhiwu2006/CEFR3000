@@ -6,6 +6,7 @@ import 'package:vocab_flash_test/data/sqlite/sqlite_progress_repository.dart';
 import 'package:vocab_flash_test/data/word_repository.dart';
 import 'package:vocab_flash_test/features/memory/application/recall_commit_service.dart';
 import 'package:vocab_flash_test/features/sync/application/cloud_sync_service.dart';
+import 'package:vocab_flash_test/features/sync/data/cloudflare_sync.dart';
 import 'package:vocab_flash_test/models/attempt.dart';
 import 'package:vocab_flash_test/models/test_run.dart';
 
@@ -111,8 +112,11 @@ void main() {
     final phone = await device('phone');
     final tablet = await device('tablet');
     final cloud = _FakeCloud();
-    CloudSyncService sync(SqliteProgressRepository repo) =>
-        CloudSyncService(repository: repo, remote: cloud, userId: 'u1');
+    CloudSyncService sync(SqliteProgressRepository repo) => CloudSyncService(
+      repository: repo,
+      remote: cloud,
+      accountKey: 'https://sync.example',
+    );
 
     final d1 = DateTime(2026, 10, 10, 7);
     // 手机：词 1 连续两天答对，并完成一轮。
@@ -194,7 +198,30 @@ void main() {
     await tablet.close();
   });
 
-  test('cursors are per account', () async {
+  test(
+    'an unreadable remote row is skipped instead of blocking sync',
+    () async {
+      final tablet = await device('tablet');
+      final cloud = _FakeCloud();
+      await cloud.upsert(CloudSyncService.eventsTable, [
+        {
+          'id': 'broken',
+          'payload': {'not': 'an event'},
+        },
+      ], updateExisting: false);
+      final service = CloudSyncService(
+        repository: tablet,
+        remote: cloud,
+        accountKey: 'https://sync.example',
+      );
+      final report = await service.syncNow();
+      expect(service.skippedRows, 1);
+      expect(report.merged.newEvents, 0);
+      await tablet.close();
+    },
+  );
+
+  test('cursors are per sync target', () async {
     final phone = await device('phone');
     final cloud = _FakeCloud();
     await answer(
@@ -205,15 +232,62 @@ void main() {
     final a = await CloudSyncService(
       repository: phone,
       remote: cloud,
-      userId: 'alice',
+      accountKey: 'https://a.example',
     ).syncNow();
     final b = await CloudSyncService(
       repository: phone,
       remote: cloud,
-      userId: 'bob',
+      accountKey: 'https://b.example',
     ).syncNow();
     expect(a.pushedEvents, 1);
-    expect(b.pushedEvents, 1); // 换账号会重新上传，不会被当成已同步
+    expect(b.pushedEvents, 1); // 换同步地址会重新上传，不会被当成已同步
     await phone.close();
   });
+
+  // 端到端：SYNC_E2E_URL / SYNC_E2E_TOKEN 指向本地 `wrangler dev` 启动的 Worker。
+  final e2eUrl = Platform.environment['SYNC_E2E_URL'];
+  final e2eToken = Platform.environment['SYNC_E2E_TOKEN'];
+  test(
+    'two devices sync through the real worker over HTTP',
+    () async {
+      final phone = await device('phone');
+      final tablet = await device('tablet');
+      // 每次运行用独立的游标命名空间，避免受上次本地数据库残留影响。
+      final key = 'e2e-${DateTime.now().microsecondsSinceEpoch}';
+      final remote = CloudflareSyncRemote(
+        baseUri: Uri.parse(e2eUrl!),
+        token: e2eToken!,
+      );
+      await remote.checkHealth();
+      final stamp = DateTime.now().microsecondsSinceEpoch;
+      final d1 = DateTime(2026, 10, 10, 7);
+      await answer(phone, 'p$stamp', _attempt(1, d1, AttemptResult.correct));
+      await answer(
+        tablet,
+        't$stamp',
+        _attempt(2, d1.add(const Duration(hours: 5)), AttemptResult.wrong),
+      );
+      CloudSyncService sync(SqliteProgressRepository repo) =>
+          CloudSyncService(repository: repo, remote: remote, accountKey: key);
+      expect((await sync(phone).syncNow()).pushedEvents, 1);
+      expect((await sync(tablet).syncNow()).merged.newEvents, greaterThan(0));
+      await sync(phone).syncNow();
+      final phoneIds = (await phone.getReviewEvents()).map((e) => e.id).toSet();
+      final tabletIds = (await tablet.getReviewEvents())
+          .map((e) => e.id)
+          .toSet();
+      expect(phoneIds.containsAll(tabletIds), isTrue);
+      expect(tabletIds.containsAll(phoneIds), isTrue);
+      expect(
+        (await phone.getCardState(2))!.due,
+        (await tablet.getCardState(2))!.due,
+      );
+      remote.close();
+      await phone.close();
+      await tablet.close();
+    },
+    skip: e2eUrl == null || e2eToken == null
+        ? 'set SYNC_E2E_URL and SYNC_E2E_TOKEN to run'
+        : false,
+  );
 }

@@ -2,7 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import '../features/sync/data/supabase_sync.dart';
+import '../features/sync/data/cloudflare_sync.dart';
 import '../session/base_providers.dart';
 import '../session/session_controller.dart';
 import '../session/session_models.dart';

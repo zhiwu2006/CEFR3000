@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../data/supabase_sync.dart';
+import '../data/cloudflare_sync.dart';
 
-/// 设置页「云同步」：邮箱验证码登录、立即同步、退出。
+/// 设置页「云同步」：填写 Cloudflare Worker 地址与同步密钥。
 class CloudSyncPanel extends ConsumerStatefulWidget {
   const CloudSyncPanel({super.key});
 
@@ -12,13 +12,14 @@ class CloudSyncPanel extends ConsumerStatefulWidget {
 }
 
 class _CloudSyncPanelState extends ConsumerState<CloudSyncPanel> {
-  final _email = TextEditingController();
-  final _code = TextEditingController();
+  final _url = TextEditingController();
+  final _token = TextEditingController();
+  bool _showToken = false;
 
   @override
   void dispose() {
-    _email.dispose();
-    _code.dispose();
+    _url.dispose();
+    _token.dispose();
     super.dispose();
   }
 
@@ -31,92 +32,78 @@ class _CloudSyncPanelState extends ConsumerState<CloudSyncPanel> {
 
     final children = <Widget>[
       Text(
-        '登录后，学习记录会在手机和平板之间自动同步：打开应用和每完成一轮时同步。'
+        '两台设备填同样的地址和密钥，学习记录就会自动同步：打开应用和每完成一轮时同步。'
         '设置和 AI 接口密钥不会上传。',
         style: theme.textTheme.bodySmall,
       ),
       const SizedBox(height: 12),
     ];
 
-    switch (sync.phase) {
-      case CloudSyncPhase.signedOut:
-        children.addAll([
-          TextField(
-            controller: _email,
-            keyboardType: TextInputType.emailAddress,
-            autofillHints: const [AutofillHints.email],
-            decoration: const InputDecoration(
-              labelText: '邮箱',
-              border: OutlineInputBorder(),
-            ),
-            onSubmitted: (_) => controller.sendCode(_email.text),
+    if (!sync.configured) {
+      children.addAll([
+        TextField(
+          controller: _url,
+          keyboardType: TextInputType.url,
+          autocorrect: false,
+          decoration: const InputDecoration(
+            labelText: 'Worker 地址',
+            hintText: 'https://vocab-flash-sync.xxx.workers.dev',
+            border: OutlineInputBorder(),
           ),
-          const SizedBox(height: 12),
-          FilledButton(
-            onPressed: sync.busy
-                ? null
-                : () => controller.sendCode(_email.text),
-            child: const Text('发送验证码'),
-          ),
-        ]);
-      case CloudSyncPhase.codeSent:
-        children.addAll([
-          TextField(
-            controller: _code,
-            keyboardType: TextInputType.number,
-            autofillHints: const [AutofillHints.oneTimeCode],
-            decoration: const InputDecoration(
-              labelText: '邮件中的验证码',
-              border: OutlineInputBorder(),
-            ),
-            onSubmitted: (_) => controller.verifyCode(_code.text),
-          ),
-          const SizedBox(height: 12),
-          Row(
-            children: [
-              TextButton(
-                onPressed: sync.busy ? null : controller.changeEmail,
-                child: const Text('换个邮箱'),
-              ),
-              const Spacer(),
-              FilledButton(
-                onPressed: sync.busy
-                    ? null
-                    : () => controller.verifyCode(_code.text),
-                child: const Text('登录'),
-              ),
-            ],
-          ),
-        ]);
-      case CloudSyncPhase.signedIn:
-        children.addAll([
-          ListTile(
-            contentPadding: EdgeInsets.zero,
-            leading: const Icon(Icons.cloud_done_outlined),
-            title: Text(sync.email ?? '已登录'),
-            subtitle: Text(
-              report == null
-                  ? '本次打开后尚未同步'
-                  : '上次同步 ${_time(report.finishedAt)} · '
-                        '上传 ${report.pushedEvents} 条作答 · '
-                        '收到 ${report.merged.newEvents} 条',
+        ),
+        const SizedBox(height: 12),
+        TextField(
+          controller: _token,
+          obscureText: !_showToken,
+          autocorrect: false,
+          enableSuggestions: false,
+          decoration: InputDecoration(
+            labelText: '同步密钥',
+            border: const OutlineInputBorder(),
+            suffixIcon: IconButton(
+              tooltip: _showToken ? '隐藏' : '显示',
+              icon: Icon(_showToken ? Icons.visibility_off : Icons.visibility),
+              onPressed: () => setState(() => _showToken = !_showToken),
             ),
           ),
-          Row(
-            children: [
-              TextButton(
-                onPressed: sync.busy ? null : controller.signOut,
-                child: const Text('退出登录'),
-              ),
-              const Spacer(),
-              FilledButton.icon(
-                onPressed: sync.busy ? null : () => controller.syncNow(),
-                icon: const Icon(Icons.sync),
-                label: const Text('立即同步'),
-              ),
-            ],
+        ),
+        const SizedBox(height: 12),
+        FilledButton(
+          onPressed: sync.busy
+              ? null
+              : () => controller.connect(_url.text, _token.text),
+          child: const Text('连接并同步'),
+        ),
+      ]);
+    } else {
+      children.addAll([
+        ListTile(
+          contentPadding: EdgeInsets.zero,
+          leading: const Icon(Icons.cloud_done_outlined),
+          title: Text(sync.url!.host),
+          subtitle: Text(
+            report == null
+                ? '本次打开后尚未同步'
+                : '上次同步 ${_time(report.finishedAt)} · '
+                      '上传 ${report.pushedEvents} 条作答 · '
+                      '收到 ${report.merged.newEvents} 条',
           ),
-        ]);
+        ),
+        Row(
+          children: [
+            TextButton(
+              onPressed: sync.busy ? null : controller.disconnect,
+              child: const Text('断开同步'),
+            ),
+            const Spacer(),
+            FilledButton.icon(
+              onPressed: sync.busy ? null : () => controller.syncNow(),
+              icon: const Icon(Icons.sync),
+              label: const Text('立即同步'),
+            ),
+          ],
+        ),
+      ]);
     }
 
     if (sync.busy) {
