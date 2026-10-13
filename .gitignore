@@ -39,6 +39,8 @@ progress_export.json
 
 # Flutter-generated platform artifacts and local one-off scripts
 **/Flutter/ephemeral/
+**/Flutter/Generated.xcconfig
+**/Flutter/flutter_export_environment.sh
 /update_script.py
 
 # Symbolication related
