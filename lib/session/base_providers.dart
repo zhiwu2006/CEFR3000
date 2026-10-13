@@ -25,6 +25,7 @@ import '../services/daily_history_service.dart';
 import '../features/study/domain/session_checkpoint.dart';
 import '../features/study/data/session_checkpoint_store.dart';
 import '../features/study/application/study_plan_service.dart';
+import '../features/memory/application/fsrs_fit_controller.dart';
 
 bool _useSqliteLearningCore() {
   if (kIsWeb || Platform.environment['FLUTTER_TEST'] == 'true') {
@@ -613,6 +614,14 @@ final todayRecognitionPlanProvider = FutureProvider.autoDispose<StudyPlan>((
     lapsesThreshold: settings.leechLapsesThreshold,
     includeMarked: settings.leechIncludeMarked,
   );
+  // 没有采用拟合时立即返回空表；估计失败时退回按到期日排序。
+  Map<int, double> recallEstimates;
+  try {
+    recallEstimates = await ref.watch(recallEstimatesProvider.future);
+  } catch (error) {
+    debugPrint('Recall estimates unavailable: $error');
+    recallEstimates = const {};
+  }
   final targetWords = settings.wordsPerSession;
   // 闪测单题估时仅 3~4 秒（见 StudyPlanService），100 题约 7 分钟；
   // 这里留出 30 分钟下限，保证时间预算不会截断用户设定的词数。
@@ -628,6 +637,7 @@ final todayRecognitionPlanProvider = FutureProvider.autoDispose<StudyPlan>((
         leechPolicy: policy,
         onlyLeeches: settings.onlyLeeches,
         skill: LearningSkill.meaningRecognition,
+        recallEstimates: recallEstimates,
       );
 });
 

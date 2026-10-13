@@ -9,6 +9,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../../data/secure_credential_store.dart';
 import '../../../session/base_providers.dart';
+import '../../memory/application/fsrs_fit_controller.dart';
 import '../application/cloud_sync_service.dart';
 import '../domain/sync_repository.dart';
 
@@ -339,6 +340,7 @@ class CloudSyncController extends StateNotifier<CloudSyncState> {
         _ref.invalidate(todayStudyPlanProvider);
         _ref.invalidate(todayRecognitionPlanProvider);
         _ref.invalidate(todayDeckProvider);
+        _ref.invalidate(recallEstimatesProvider);
       }
       await _config.saveLastSynced(report.finishedAt);
       if (mounted) {

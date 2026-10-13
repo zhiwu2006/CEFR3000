@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../features/sync/data/cloudflare_sync.dart';
+import '../features/memory/application/fsrs_fit_controller.dart';
 import '../session/base_providers.dart';
 
 /// 加载页面
@@ -21,8 +22,14 @@ class LoadingScreen extends ConsumerWidget {
             WidgetsBinding.instance.addPostFrameCallback((_) {
               if (context.mounted) {
                 Navigator.of(context).pushReplacementNamed('/home');
-                // 启动后在后台同步一次；未登录或离线时安静跳过。
-                ref.read(cloudSyncProvider.notifier).syncNow(quiet: true);
+                // 启动后在后台同步一次；未配置或离线时安静跳过。同步完再按
+                // 合并后的记录检查记忆模型是否该重新拟合。页面马上被替换，
+                // 所以先取出 notifier，不在回调里再用 ref。
+                final fit = ref.read(fsrsFitProvider.notifier);
+                ref
+                    .read(cloudSyncProvider.notifier)
+                    .syncNow(quiet: true)
+                    .whenComplete(fit.refitIfStale);
               }
             });
           }

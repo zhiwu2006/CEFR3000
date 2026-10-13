@@ -36,6 +36,7 @@ class StudyPlanService {
     bool onlyLeeches = false,
     LearningSkill skill = LearningSkill.meaningRecognition,
     bool allowLegacyFallback = false,
+    Map<int, double> recallEstimates = const {},
   }) async {
     final words = await wordRepository.loadByLevels(levels);
     final suspendedLexemes = <String>{};
@@ -123,6 +124,7 @@ class StudyPlanService {
             skill: skill,
             taskType: ReviewTaskType.recognition,
             needsConsolidation: pendingConsolidation.contains(word.id),
+            recallProbability: recallEstimates[word.id],
             dueAt: state?.due,
             // 接触过但尚未提交卡片状态的词仍属于学习中，避免计划重复
             // 把它当成全新词并再次占用今日新词额度。

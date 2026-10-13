@@ -16,6 +16,7 @@ import '../theme/theme_style.dart';
 import '../utils/responsive_layout.dart';
 import '../utils/openrouter_models.dart';
 import '../utils/ai_studio_models.dart';
+import '../features/memory/presentation/memory_model_panel.dart';
 import '../data/hive_word_repository.dart';
 
 /// 设置页面
@@ -2202,6 +2203,10 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
           height: AppTheme.getResponsivePadding(context, AppTheme.paddingLarge),
         ),
 
+        _buildSection(context, '记忆模型', const [MemoryModelPanel()]),
+        SizedBox(
+          height: AppTheme.getResponsivePadding(context, AppTheme.paddingLarge),
+        ),
         _buildSection(context, '云同步', const [CloudSyncPanel()]),
 
         SizedBox(
@@ -2333,6 +2338,13 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
               ),
             ),
 
+            _buildSection(context, '记忆模型', const [MemoryModelPanel()]),
+            SizedBox(
+              height: AppTheme.getResponsivePadding(
+                context,
+                AppTheme.paddingLarge,
+              ),
+            ),
             _buildSection(context, '云同步', const [CloudSyncPanel()]),
 
             SizedBox(

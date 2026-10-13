@@ -20,6 +20,9 @@ class StudyCandidate {
   final int estimatedSeconds;
   final bool needsConsolidation;
 
+  /// 拟合后的记忆模型估计的此刻回忆概率；到期词里越低越先复习。
+  final double? recallProbability;
+
   const StudyCandidate({
     required this.wordId,
     this.learningItemId,
@@ -33,6 +36,7 @@ class StudyCandidate {
     required this.isRelearning,
     this.estimatedSeconds = 25,
     this.needsConsolidation = false,
+    this.recallProbability,
   });
 
   String get uniqueKey => learningItemId ?? 'legacy:$wordId:${skill.name}';
@@ -147,6 +151,12 @@ class StudyPlanner {
     filtered.sort((a, b) {
       final byPriority = priority(a).compareTo(priority(b));
       if (byPriority != 0) return byPriority;
+      // 到期词超出今日容量时，先复习模型认为最可能已经忘掉的。
+      final aRecall = a.recallProbability;
+      final bRecall = b.recallProbability;
+      if (aRecall != null && bRecall != null && aRecall != bRecall) {
+        return aRecall.compareTo(bRecall);
+      }
       final aDue = a.dueAt ?? DateTime.fromMillisecondsSinceEpoch(0);
       final bDue = b.dueAt ?? DateTime.fromMillisecondsSinceEpoch(0);
       final byDue = aDue.compareTo(bDue);
