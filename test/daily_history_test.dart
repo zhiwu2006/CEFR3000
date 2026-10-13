@@ -242,7 +242,9 @@ void main() {
         );
 
         final cardStates = {
-          1: CardState.newCard(1).copyWith(lapses: 3), // FSRS 难词 (+30)
+          1: CardState.newCard(
+            1,
+          ).copyWith(lapses: 3, longTermReviews: 1), // FSRS 难词 (+30)
         };
 
         final fakeProgress = FakeProgressRepository(

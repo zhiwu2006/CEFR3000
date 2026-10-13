@@ -36,8 +36,11 @@ class LeechPolicy {
   static const defaultPolicy = LeechPolicy();
 
   /// 判断一个卡片是否为 Leech
+  ///
+  /// 遗忘次数只对「学会过」（至少一次跨日成功回忆）的词有意义；从没学会的
+  /// 词答错只是还在学习中，归入重学而不是疑难词。用户手动标记的仍然算。
   bool isLeech(CardState state) =>
-      state.lapses >= lapsesThreshold ||
+      (state.longTermReviews > 0 && state.lapses >= lapsesThreshold) ||
       (includeMarked && state.isMarkedDifficult);
 }
 
@@ -175,7 +178,11 @@ class SrsAlgorithm {
       newRtP50: currentState.rtP50,
       reviewedAt: reviewTime,
       countsAsLongTermReview: !shortTermReview && quality >= 3,
-      increaselapses: quality <= 2 && countFailureAsLongTerm,
+      // 遗忘（lapse）指学会后又忘记：从没跨日答对过的词答错不计。
+      increaselapses:
+          quality <= 2 &&
+          countFailureAsLongTerm &&
+          currentState.longTermReviews > 0,
     );
   }
 

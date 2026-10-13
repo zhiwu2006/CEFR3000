@@ -125,11 +125,19 @@ class StudyPlanner {
         .where((candidate) => !policy.onlyLeeches || candidate.isLeech)
         .toList();
 
+    // 到期按自然日判断，与卡片的 isDue 和回忆提交口径一致。
+    final today = DateTime(timestamp.year, timestamp.month, timestamp.day);
+    bool isDue(StudyCandidate candidate) {
+      final due = candidate.dueAt;
+      return due != null &&
+          !DateTime(due.year, due.month, due.day).isAfter(today);
+    }
+
     int priority(StudyCandidate candidate) {
       if (candidate.needsConsolidation) return -1;
       if (candidate.isRelearning) return 0;
       if (candidate.isLeech) return 1;
-      if (candidate.dueAt != null && !candidate.dueAt!.isAfter(timestamp)) {
+      if (isDue(candidate)) {
         return 2;
       }
       if (candidate.isNew) return 4;
@@ -174,7 +182,7 @@ class StudyPlanner {
           ? PlanReason.leech
           : candidate.isNew
           ? PlanReason.newCard
-          : (candidate.dueAt != null && !candidate.dueAt!.isAfter(timestamp))
+          : isDue(candidate)
           ? PlanReason.overdue
           : PlanReason.extraPractice;
       selected.add(

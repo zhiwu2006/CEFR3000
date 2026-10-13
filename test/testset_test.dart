@@ -193,7 +193,9 @@ void main() {
         1: CardState.newCard(
           1,
         ).copyWith(due: DateTime.now().subtract(const Duration(days: 1))), // 到期
-        2: CardState.newCard(2).copyWith(lapses: 2), // 不熟
+        2: CardState.newCard(
+          2,
+        ).copyWith(lapses: 2, longTermReviews: 1), // 学会后又遗忘的不熟词
         3: CardState.newCard(3).markDifficult(), // 标记疑难
       };
 

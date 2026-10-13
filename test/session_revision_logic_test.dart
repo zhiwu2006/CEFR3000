@@ -211,7 +211,11 @@ void main() {
       'in-session retry does not add a second lapse or long-term review',
       () {
         final start = DateTime(2026, 1, 1, 9);
-        final state = CardState.newCard(1, now: start);
+        // 学会过的词：首答错误计一次遗忘，会话内重测不再追加。
+        final state = CardState.newCard(
+          1,
+          now: start,
+        ).copyWith(longTermReviews: 1);
         final updated = SrsAlgorithm.batchUpdateCardStates(
           {1: state},
           [
@@ -227,7 +231,7 @@ void main() {
         )[1]!;
 
         expect(updated.lapses, 1);
-        expect(updated.longTermReviews, 0);
+        expect(updated.longTermReviews, 1);
         expect(updated.isMastered, isFalse);
       },
     );

@@ -109,7 +109,9 @@ class RecallCommitService {
       timeLimitMs: timeLimitMs,
       slowThreshold: slowThreshold,
       baselineRtMs: current.rtP50 > 0 ? current.rtP50 : null,
-      isDueReview: isDueReview ?? !current.due.isAfter(attempt.timestamp),
+      // 到期按自然日判断，与首页「今日到期」和计划器口径一致：
+      // 昨天 21:00 学的词今天 07:00 复习也算到期复习。
+      isDueReview: isDueReview ?? isDueOn(current.due, attempt.timestamp),
       answerRevealed: answerRevealed,
       hintUsed: hintUsed,
       taskType: taskType,
@@ -230,6 +232,13 @@ class RecallCommitService {
       firstExposureToday: firstExposureToday,
     );
   }
+
+  /// [due] 所在自然日不晚于 [at] 所在自然日即视为到期。
+  static bool isDueOn(DateTime due, DateTime at) => !DateTime(
+    due.year,
+    due.month,
+    due.day,
+  ).isAfter(DateTime(at.year, at.month, at.day));
 
   String _learningItemId(int wordId, LearningSkill skill) =>
       'legacy:$wordId:sense:primary:${_skillSlug(skill)}';

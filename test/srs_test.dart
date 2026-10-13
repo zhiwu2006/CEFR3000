@@ -78,7 +78,15 @@ void main() {
       // 错误答题应该重置稳定度
       final wrongState = SrsAlgorithm.updateCardState(initialState, 1);
       expect(wrongState.stability, equals(1.2)); // 重置为 beta
-      expect(wrongState.lapses, equals(initialState.lapses + 1));
+      // 从没学会过的新词答错不算遗忘
+      expect(wrongState.lapses, equals(initialState.lapses));
+
+      // 学会过（有跨日成功回忆）的词答错才计一次遗忘
+      final learned = initialState.copyWith(longTermReviews: 1);
+      expect(
+        SrsAlgorithm.updateCardState(learned, 1).lapses,
+        equals(learned.lapses + 1),
+      );
 
       // 正确答题应该增加稳定度
       final correctState = SrsAlgorithm.updateCardState(initialState, 4);
@@ -104,7 +112,10 @@ void main() {
     });
 
     test('batch updates multiple card states', () {
-      final states = {1: CardState.newCard(1), 2: CardState.newCard(2)};
+      final states = {
+        1: CardState.newCard(1),
+        2: CardState.newCard(2).copyWith(longTermReviews: 1), // 学会过
+      };
 
       final attempts = [
         Attempt.correct(wordId: 1, rtMs: 1000, chosenIndex: 0, correctIndex: 0),
@@ -130,7 +141,9 @@ void main() {
       final states = {
         1: CardState.newCard(1).copyWith(due: yesterday), // 到期
         2: CardState.newCard(2).copyWith(due: tomorrow), // 未到期
-        3: CardState.newCard(3).copyWith(lapses: 2), // 不熟词
+        3: CardState.newCard(
+          3,
+        ).copyWith(lapses: 2, longTermReviews: 1), // 学会后又遗忘的不熟词
         4: CardState.newCard(4).markDifficult(), // 标记疑难
       };
 
