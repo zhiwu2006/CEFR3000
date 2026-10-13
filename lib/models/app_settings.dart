@@ -155,7 +155,7 @@ class AppSettings {
   ({int wrongDelay, int slowDelay}) get delayConfig {
     switch (delayProfile) {
       case DelayProfile.gentle:
-        return (wrongDelay: 2, slowDelay: 4);
+        return (wrongDelay: 3, slowDelay: 4);
       case DelayProfile.standard:
         return (wrongDelay: 3, slowDelay: 5);
       case DelayProfile.aggressive:
@@ -163,18 +163,18 @@ class AppSettings {
     }
   }
 
-  /// 是否为可访问性模式（延长时限）
-  bool get isAccessibilityMode => timeLimitMs >= 6000;
-
-  /// 是否有进行中的测试
-  bool get hasActiveSession =>
-      currentSessionId != null && remainingWordIds.isNotEmpty;
-
-  /// 获取测试进度百分比
-  double get progressPercentage {
-    if (totalWords == 0) return 0.0;
-    return currentProgress / totalWords;
-  }
+  // 说明：原先的 `hasActiveSession` 与 `progressPercentage` 两个 getter 已移除。
+  // 它们以 `currentSessionId` 判断「是否有进行中的会话」，但该字段只由
+  // `stageCustomSession` 写入 —— 首页「开始学习」从不写它，会漏报主路径；
+  // 而进度更新入口（原 `updateTestProgress`）零调用，对自定义会话恒为 0 进度。
+  // 口径本身就不成立，留着还会被误当作恢复门槛（这正是 4.1 的成因）。
+  //
+  // 现在「是否存在未完成会话」的唯一来源是 `SessionCheckpoint.isResumable`，
+  // 消费方为 `learningStatsProvider`（统计页「当前会话」卡片）与
+  // `test_screen.dart` 的恢复判据。
+  //
+  // 下列字段仍由 `stageCustomSession` 写入、`clearTestProgress` 清除，仅为
+  // 兼容既有持久化数据而保留，不再作为会话权威；彻底删除需要改持久化 schema。
 
   // ========================================================================
   // 获取兼容的 copyWith
@@ -314,31 +314,6 @@ class AppSettings {
       currentProgress: 0,
       totalWords: 0,
       remainingWordIds: [],
-    );
-  }
-
-  /// 更新测试进度
-  AppSettings updateProgress({
-    String? sessionId,
-    int? progress,
-    int? total,
-    List<int>? remaining,
-  }) {
-    return copyWith(
-      currentSessionId: sessionId,
-      currentProgress: progress,
-      totalWords: total,
-      remainingWordIds: remaining,
-    );
-  }
-}
-
-/// AppSettings 扩展方法
-extension AppSettingsExtensions on AppSettings {
-  /// 使用Set创建AppSettings
-  static AppSettings withLevels(Set<String> levels) {
-    return AppSettings.defaultSettings.copyWith(
-      selectedLevels: levels.toList(),
     );
   }
 }

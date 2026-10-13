@@ -28,13 +28,16 @@ class TestRunAdapter extends TypeAdapter<TestRun> {
       attempts: (fields[8] as List).cast<Attempt>(),
       orderPolicy: fields[9] as String,
       onlyLeeches: fields[10] as bool,
+      unresolvedWordIds: fields[11] == null
+          ? []
+          : (fields[11] as List).cast<int>(),
     );
   }
 
   @override
   void write(BinaryWriter writer, TestRun obj) {
     writer
-      ..writeByte(11)
+      ..writeByte(12)
       ..writeByte(0)
       ..write(obj.id)
       ..writeByte(1)
@@ -56,7 +59,9 @@ class TestRunAdapter extends TypeAdapter<TestRun> {
       ..writeByte(9)
       ..write(obj.orderPolicy)
       ..writeByte(10)
-      ..write(obj.onlyLeeches);
+      ..write(obj.onlyLeeches)
+      ..writeByte(11)
+      ..write(obj.unresolvedWordIds);
   }
 
   @override
@@ -90,6 +95,11 @@ TestRun _$TestRunFromJson(Map<String, dynamic> json) => TestRun(
       .toList(),
   orderPolicy: json['orderPolicy'] as String,
   onlyLeeches: json['onlyLeeches'] as bool,
+  unresolvedWordIds:
+      (json['unresolvedWordIds'] as List<dynamic>?)
+          ?.map((e) => (e as num).toInt())
+          .toList() ??
+      const [],
 );
 
 Map<String, dynamic> _$TestRunToJson(TestRun instance) => <String, dynamic>{
@@ -101,7 +111,8 @@ Map<String, dynamic> _$TestRunToJson(TestRun instance) => <String, dynamic>{
   'timeLimitMs': instance.timeLimitMs,
   'accuracy': instance.accuracy,
   'avgRtMs': instance.avgRtMs,
-  'attempts': instance.attempts,
+  'attempts': instance.attempts.map((e) => e.toJson()).toList(),
   'orderPolicy': instance.orderPolicy,
   'onlyLeeches': instance.onlyLeeches,
+  'unresolvedWordIds': instance.unresolvedWordIds,
 };

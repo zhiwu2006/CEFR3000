@@ -237,6 +237,13 @@ class SrsAlgorithm {
   ///
   /// R = (1 + t / (9 * S))^(-1)
   /// 比简单指数模型 e^(-t/S) 更符合认知科学研究。
+  ///
+  /// **当前状态：生产路径未启用。** 本方法唯一的调用点是下方的兼容批处理
+  /// `batchUpdateCardStates`；而线上调度走 `MemoryScheduler.schedule` →
+  /// `updateCardState`，该调用链**不传** `recallProb`（见
+  /// `features/memory/domain/memory_scheduler.dart:22-29`）。因此幂律校正与
+  /// `_adjustStabilityByRecall` 目前都不会生效，实际稳定度增长仍是纯对数
+  /// 阻尼模型。若要启用，需在 `MemoryScheduler.schedule` 中显式传入。
   static double estimateRecallProbability(
     CardState currentState, {
     DateTime? at,
@@ -256,6 +263,10 @@ class SrsAlgorithm {
   }
 
   /// 根据回忆概率调整稳定度（P1 修复：限制最终惩罚下界）
+  ///
+  /// **当前状态：生产路径不可达。** `recallProb` 为 null 时直接原样返回，
+  /// 而生产调用链不传该参数，所以下面的奖励/惩罚分支目前不会执行。
+  /// 保留实现是为了在启用幂律校正时可以直接复用，勿据此推断线上行为。
   static double _adjustStabilityByRecall(
     double stability,
     int quality,

@@ -5,6 +5,7 @@ import '../../../data/word_preference_repository.dart';
 import '../../../core/clock.dart';
 import '../../../data/word_repository.dart';
 import '../../../domain/srs.dart';
+import '../../../models/test_run.dart';
 import '../../lexicon/domain/content_eligibility.dart';
 import '../../memory/domain/learning_item_state.dart';
 import '../../memory/domain/recall_models.dart';
@@ -65,16 +66,17 @@ class StudyPlanService {
         : null;
     final itemStates = <String, LearningItemState>{};
     if (itemRepository != null && skill != LearningSkill.meaningRecognition) {
-      final loaded = await Future.wait(
-        words.map((word) async {
-          final itemId = _learningItemId(word.id, skill);
-          final state = await itemRepository.getLearningItemState(itemId);
-          return (itemId: itemId, state: state);
-        }),
-      );
-      for (final entry in loaded) {
-        final state = entry.state;
-        if (state != null) itemStates[entry.itemId] = state;
+      // 一次性取回全部条目状态再按 itemId 过滤，避免 N+1：loadByLevels 可能
+      // 返回数千个词，逐词 await 一次查询会把计划构建拖到秒级，在低端
+      // Android 设备上尤其明显。
+      final wantedItemIds = <String>{
+        for (final word in words) _learningItemId(word.id, skill),
+      };
+      final loaded = await itemRepository.getLearningItemStates();
+      for (final state in loaded) {
+        if (wantedItemIds.contains(state.itemId)) {
+          itemStates[state.itemId] = state;
+        }
       }
     }
     final now = clock.now;
@@ -98,6 +100,13 @@ class StudyPlanService {
     final effectiveDailyNewUsed = dailyNewUsed > durableDailyNewUsed
         ? dailyNewUsed
         : durableDailyNewUsed;
+    final pendingConsolidation = skill == LearningSkill.meaningRecognition
+        ? TestRun.pendingConsolidation(
+            await progressRepository.getTestRunHistory(
+              limit: TestRun.pendingConsolidationLookbackRuns,
+            ),
+          )
+        : <int>{};
     final candidates = <StudyCandidate>[];
     for (final word in words) {
       if (suspendedLexemes.contains(word.stableId)) continue;
@@ -113,6 +122,7 @@ class StudyPlanService {
             lexemeId: word.stableId,
             skill: skill,
             taskType: ReviewTaskType.recognition,
+            needsConsolidation: pendingConsolidation.contains(word.id),
             dueAt: state?.due,
             // 接触过但尚未提交卡片状态的词仍属于学习中，避免计划重复
             // 把它当成全新词并再次占用今日新词额度。
@@ -120,7 +130,8 @@ class StudyPlanService {
             isLeech: isLeech,
             isRelearning:
                 state != null && state.lapses > 0 && state.stability < 2,
-            estimatedSeconds: state == null ? 35 : 20,
+            // 闪测限时 2 秒 + 反馈 800ms，单题预估耗时按 3~4 秒计算，避免误触发时间预算截断
+            estimatedSeconds: state == null ? 4 : 3,
           ),
         );
         continue;

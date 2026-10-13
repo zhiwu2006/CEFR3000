@@ -75,7 +75,7 @@ class DistractorService {
         distractors,
         correctAnswer,
         targetWord,
-        3 - distractors.length,
+        3,
         targetWord.cnDefs,
       );
     }
@@ -95,7 +95,7 @@ class DistractorService {
         distractors,
         correctAnswer,
         targetWord,
-        3 - distractors.length,
+        3,
         targetWord.cnDefs,
       );
     }
@@ -103,10 +103,23 @@ class DistractorService {
     // 兜底：如果仍不足3个，尝试从整个词库或占位符补足
     if (distractors.length < 3) {
       final used = {...distractors, correctAnswer};
+      final targetAllDefs = targetWord.cnDefs;
       for (final word in candidatePool) {
         if (distractors.length >= 3) break;
         final def = word.primaryDefinition;
-        if (!used.contains(def)) {
+        if (used.contains(def)) continue;
+        // 与 _addDistractorsFromPool 一致的冲突检查：
+        // 排除与目标词任一释义有包含关系的定义。
+        bool hasConflict = false;
+        for (final targetDef in targetAllDefs) {
+          if (def == targetDef ||
+              def.contains(targetDef) ||
+              targetDef.contains(def)) {
+            hasConflict = true;
+            break;
+          }
+        }
+        if (!hasConflict) {
           distractors.add(def);
           used.add(def);
         }
@@ -131,16 +144,17 @@ class DistractorService {
     List<String> distractors,
     String correctAnswer,
     Word targetWord,
-    int needed,
+    int targetTotal,
     List<String> targetAllDefs,
   ) {
-    if (pool.isEmpty || needed <= 0) return;
+    // All stages fill toward the same total, not a remaining-count threshold.
+    if (pool.isEmpty || distractors.length >= targetTotal) return;
 
     // 随机打乱词池
     final shuffledPool = List<Word>.from(pool)..shuffle(_random);
 
     for (final word in shuffledPool) {
-      if (distractors.length >= needed) break;
+      if (distractors.length >= targetTotal) break;
 
       // 如果候选词的任何一个释义，出现在目标词的释义中，则排除
       if (word.cnDefs.any((def) => targetAllDefs.contains(def))) {

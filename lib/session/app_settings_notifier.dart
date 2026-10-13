@@ -6,6 +6,7 @@ import 'dart:async';
 
 import '../models/models.dart';
 import '../data/secure_credential_store.dart';
+import '../features/study/data/session_checkpoint_store.dart';
 
 /// App Settings Notifier
 class AppSettingsNotifier extends StateNotifier<AppSettings> {
@@ -16,11 +17,9 @@ class AppSettingsNotifier extends StateNotifier<AppSettings> {
   static const _openRouterCredential = 'vocab_flash.openrouter.api_key';
   static const _aiStudioCredential = 'vocab_flash.aistudio.api_key';
 
-  AppSettingsNotifier(
-    this._prefsAsync, {
-    CredentialStore? credentialStore,
-  }) : _credentialStore = credentialStore ?? FlutterCredentialStore(),
-       super(AppSettings.defaultSettings) {
+  AppSettingsNotifier(this._prefsAsync, {CredentialStore? credentialStore})
+    : _credentialStore = credentialStore ?? FlutterCredentialStore(),
+      super(AppSettings.defaultSettings) {
     _loadSettings();
   }
 
@@ -50,9 +49,11 @@ class AppSettingsNotifier extends StateNotifier<AppSettings> {
             levels = str.split(',');
           }
 
+          final words = prefs.getInt('wordsPerSession') ?? 100;
+
           session = SessionSettings(
             selectedLevels: levels,
-            wordsPerSession: prefs.getInt('wordsPerSession') ?? 20,
+            wordsPerSession: words,
             timeLimitMs:
                 (prefs.getInt('timeLimitMs') != null &&
                     prefs.getInt('timeLimitMs')! > 0)
@@ -118,7 +119,7 @@ class AppSettingsNotifier extends StateNotifier<AppSettings> {
           algorithm = AlgorithmSettings(
             leechWordsPerSession: prefs.getInt('leechWordsPerSession') ?? 5,
             newCardRatio: prefs.getDouble('newCardRatio') ?? 0.3,
-            dailyNewLimit: prefs.getInt('dailyNewLimit') ?? 50,
+            dailyNewLimit: prefs.getInt('dailyNewLimit') ?? 100,
             leechLapsesThreshold: prefs.getInt('leechLapsesThreshold') ?? 2,
             leechIncludeMarked: prefs.getBool('leechIncludeMarked') ?? true,
           );
@@ -233,18 +234,17 @@ class AppSettingsNotifier extends StateNotifier<AppSettings> {
 
   // --- 更新方法 (Delegators) ---
 
-  void updateSessionSettings(SessionSettings newSettings) {
-    state = state.copyWith(session: newSettings);
-    _debouncedSave();
-  }
-
   Future<void> updateSelectedLevels(Set<String> levels) async {
     state = state.copyWith(selectedLevels: levels.toList());
     _debouncedSave();
   }
 
   Future<void> updateWordsPerSession(int count) async {
-    state = _maybeSetCustomMode(state.copyWith(wordsPerSession: count));
+    final nextState = _maybeSetCustomMode(
+      state.copyWith(wordsPerSession: count),
+    );
+    if (nextState == state) return;
+    state = nextState;
     _debouncedSave();
   }
 
@@ -255,11 +255,6 @@ class AppSettingsNotifier extends StateNotifier<AppSettings> {
 
   Future<void> updateOrderPolicy(String policy) async {
     state = state.copyWith(orderPolicy: policy);
-    _debouncedSave();
-  }
-
-  Future<void> updateOnlyLeeches(bool onlyLeeches) async {
-    state = state.copyWith(onlyLeeches: onlyLeeches);
     _debouncedSave();
   }
 
@@ -456,8 +451,9 @@ class AppSettingsNotifier extends StateNotifier<AppSettings> {
       state = updated;
       _debouncedSave();
     }
-    final remaining = updated.algorithm.dailyNewLimit - updated.dailyNewUsed;
-    return remaining.clamp(0, updated.algorithm.dailyNewLimit);
+    final limit = updated.algorithm.dailyNewLimit;
+    final remaining = limit - updated.dailyNewUsed;
+    return remaining.clamp(0, limit);
   }
 
   Future<void> consumeDailyNew(int count) async {
@@ -486,21 +482,6 @@ class AppSettingsNotifier extends StateNotifier<AppSettings> {
     return '$y-$m-$d';
   }
 
-  Future<void> saveTestProgress({
-    required String sessionId,
-    required int currentProgress,
-    required int totalWords,
-    required List<int> remainingWordIds,
-  }) async {
-    state = state.copyWith(
-      currentSessionId: sessionId,
-      currentProgress: currentProgress,
-      totalWords: totalWords,
-      remainingWordIds: remainingWordIds,
-    );
-    _debouncedSave();
-  }
-
   Future<String> stageCustomSession(List<int> wordIds) async {
     if (wordIds.isEmpty) return '';
     final sessionId = 'custom_${DateTime.now().microsecondsSinceEpoch}';
@@ -510,6 +491,10 @@ class AppSettingsNotifier extends StateNotifier<AppSettings> {
       totalWords: wordIds.length,
       remainingWordIds: wordIds,
     );
+    // 显式编排的新会话必须让旧的进行中检查点失效。
+    // TestScreen 的恢复判据是「检查点是否可恢复」，若此处不清理，用户从
+    // 日历/疑难词/错题入口新选的词会被旧检查点顶掉，恢复成上一轮会话。
+    await _discardSessionCheckpoint();
     _debouncedSave();
     return sessionId;
   }
@@ -517,28 +502,17 @@ class AppSettingsNotifier extends StateNotifier<AppSettings> {
   Future<void> clearTestProgress() async {
     debugPrint('=== clearTestProgress called ===');
     state = state.clearProgress();
-    final prefsAsync = _prefsAsync;
-    if (prefsAsync is AsyncData<SharedPreferences>) {
-      await prefsAsync.value.remove('study_session_checkpoint_v1');
-    }
+    await _discardSessionCheckpoint();
     _debouncedSave();
     debugPrint('Settings saved');
   }
 
-  Future<void> updateTestProgress({
-    int? currentProgress,
-    List<int>? remainingWordIds,
-  }) async {
-    state = state.copyWith(
-      currentProgress: currentProgress ?? state.currentProgress,
-      remainingWordIds: remainingWordIds ?? state.remainingWordIds,
-    );
-    _debouncedSave();
-  }
-
-  Future<void> resumeTestSession() async {
-    debugPrint('=== Resuming test session ===');
-    debugPrint('Session ID: ${state.currentSessionId}');
+  /// 删除持久化的会话检查点（与 [SessionCheckpointStore] 共用同一个 key）。
+  Future<void> _discardSessionCheckpoint() async {
+    final prefsAsync = _prefsAsync;
+    if (prefsAsync is AsyncData<SharedPreferences>) {
+      await prefsAsync.value.remove(SessionCheckpointStore.storageKey);
+    }
   }
 
   @override
@@ -577,9 +551,18 @@ class AppSettingsNotifier extends StateNotifier<AppSettings> {
           'session_config',
           jsonEncode(currentSettings.session.toJson()),
         );
-        await prefs.setString('theme_config', jsonEncode(currentSettings.theme.toJson()));
-        await prefs.setString('tts_config', jsonEncode(currentSettings.tts.toJson()));
-        await prefs.setString('srs_config', jsonEncode(currentSettings.srs.toJson()));
+        await prefs.setString(
+          'theme_config',
+          jsonEncode(currentSettings.theme.toJson()),
+        );
+        await prefs.setString(
+          'tts_config',
+          jsonEncode(currentSettings.tts.toJson()),
+        );
+        await prefs.setString(
+          'srs_config',
+          jsonEncode(currentSettings.srs.toJson()),
+        );
         await prefs.setString(
           'algorithm_config',
           jsonEncode(currentSettings.algorithm.toJson()),
@@ -611,7 +594,10 @@ class AppSettingsNotifier extends StateNotifier<AppSettings> {
         }
 
         if (currentSettings.currentSessionId != null) {
-          await prefs.setString('currentSessionId', currentSettings.currentSessionId!);
+          await prefs.setString(
+            'currentSessionId',
+            currentSettings.currentSessionId!,
+          );
         } else {
           await prefs.remove('currentSessionId');
         }

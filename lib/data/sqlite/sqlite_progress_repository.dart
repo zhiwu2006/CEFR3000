@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'package:sqflite/sqflite.dart';
+import 'package:crypto/crypto.dart';
 
 import '../../domain/srs.dart';
 import '../../features/lexicon/domain/lexicon_models.dart';
@@ -39,6 +40,11 @@ class SqliteProgressRepository
 
   SqliteProgressRepository(this._wordRepository, {this.databasePath});
 
+  /// Inject an already opened database for repository contract tests.
+  SqliteProgressRepository.withDatabase(this._wordRepository, Database database)
+    : databasePath = null,
+      _database = database;
+
   Database get _db {
     final database = _database;
     if (database == null) {
@@ -46,8 +52,6 @@ class SqliteProgressRepository
     }
     return database;
   }
-
-  bool get isInitialized => _database != null;
 
   /// Whether the target database already contains user-owned migrated data.
   /// Preferences count too: a migration must never erase a user's recent
@@ -102,21 +106,44 @@ class SqliteProgressRepository
     return Map<String, dynamic>.from(value as Map);
   }
 
-  /// Materializes the legacy word list as stable Lexeme/Sense/LearningItem
-  /// rows. The operation is idempotent and does not touch memory state.
+  static const _lexiconIndexKey = 'legacyLexiconIndex:v1';
+
+  /// Hash content, not just word count. Changing the mapper requires a key bump.
+  static String lexiconFingerprint(Iterable<Word> words) {
+    final sorted = words.toList()..sort((a, b) => a.id.compareTo(b.id));
+    return sha256
+        .convert(
+          utf8.encode(jsonEncode(sorted.map((word) => word.toJson()).toList())),
+        )
+        .toString();
+  }
+
+  /// Unchanged installations skip the inserts: one metadata lookup after
+  /// hashing the word list, instead of thousands of row writes.
+  /// Additive indexing preserves reviewed content and all learning state.
   Future<void> indexLegacyLexicon(Iterable<Word> words) async {
+    final snapshot = words.toList(growable: false);
+    final fingerprint = lexiconFingerprint(snapshot);
     final mapper = const LegacyLexiconMapper();
     await _db.transaction((txn) async {
-      for (final word in words) {
+      final metadata = await txn.query(
+        'meta',
+        columns: ['value'],
+        where: 'key = ?',
+        whereArgs: [_lexiconIndexKey],
+      );
+      if (metadata.isNotEmpty && metadata.first['value'] == fingerprint) return;
+      final batch = txn.batch();
+      for (final word in snapshot) {
         final mapped = mapper.mapWord(word);
         final items = mapper.defaultItemsFor(mapped.sense);
-        await txn.insert('lexemes', {
+        batch.insert('lexemes', {
           'stable_id': mapped.lexeme.stableId,
           'legacy_word_id': mapped.lexeme.legacyWordId,
           'content_version': mapped.lexeme.contentVersion,
           'payload': jsonEncode(mapped.lexeme.toJson()),
         }, conflictAlgorithm: ConflictAlgorithm.ignore);
-        await txn.insert('senses', {
+        batch.insert('senses', {
           'id': mapped.sense.id,
           'lexeme_id': mapped.sense.lexemeId,
           'part_of_speech': mapped.sense.partOfSpeech,
@@ -124,7 +151,7 @@ class SqliteProgressRepository
           'payload': jsonEncode(mapped.sense.toJson()),
         }, conflictAlgorithm: ConflictAlgorithm.ignore);
         for (final item in items) {
-          await txn.insert('learning_items', {
+          batch.insert('learning_items', {
             'id': item.id,
             'sense_id': item.senseId,
             'skill': item.skill.name,
@@ -133,54 +160,12 @@ class SqliteProgressRepository
           }, conflictAlgorithm: ConflictAlgorithm.ignore);
         }
       }
+      batch.insert('meta', {
+        'key': _lexiconIndexKey,
+        'value': fingerprint,
+      }, conflictAlgorithm: ConflictAlgorithm.replace);
+      await batch.commit(noResult: true);
     });
-  }
-
-  Future<List<Lexeme>> getLexemes() async {
-    final rows = await _db.query('lexemes', orderBy: 'legacy_word_id ASC');
-    return rows
-        .map(
-          (row) => Lexeme.fromJson(
-            Map<String, dynamic>.from(
-              jsonDecode(row['payload']! as String) as Map,
-            ),
-          ),
-        )
-        .toList();
-  }
-
-  Future<List<Sense>> getSensesForLexeme(String lexemeId) async {
-    final rows = await _db.query(
-      'senses',
-      where: 'lexeme_id = ?',
-      whereArgs: [lexemeId],
-    );
-    return rows
-        .map(
-          (row) => Sense.fromJson(
-            Map<String, dynamic>.from(
-              jsonDecode(row['payload']! as String) as Map,
-            ),
-          ),
-        )
-        .toList();
-  }
-
-  Future<List<LearningItem>> getLearningItemsForSense(String senseId) async {
-    final rows = await _db.query(
-      'learning_items',
-      where: 'sense_id = ? AND enabled = 1',
-      whereArgs: [senseId],
-    );
-    return rows
-        .map(
-          (row) => LearningItem.fromJson(
-            Map<String, dynamic>.from(
-              jsonDecode(row['payload']! as String) as Map,
-            ),
-          ),
-        )
-        .toList();
   }
 
   @override
@@ -242,7 +227,9 @@ class SqliteProgressRepository
     );
     if (rows.isEmpty) return null;
     return UserWordPreference.fromJson(
-      Map<String, dynamic>.from(jsonDecode(rows.first['payload']! as String) as Map),
+      Map<String, dynamic>.from(
+        jsonDecode(rows.first['payload']! as String) as Map,
+      ),
     );
   }
 
@@ -262,18 +249,14 @@ class SqliteProgressRepository
 
   @override
   Future<void> saveWordPreference(UserWordPreference preference) async {
-    await _db.insert(
-      'word_preferences',
-      {
-        'lexeme_id': preference.lexemeId,
-        'suspended': preference.suspended ? 1 : 0,
-        'self_declared_known': preference.selfDeclaredKnown ? 1 : 0,
-        'manual_difficult': preference.manualDifficult ? 1 : 0,
-        'updated_at': preference.updatedAt.toIso8601String(),
-        'payload': jsonEncode(preference.toJson()),
-      },
-      conflictAlgorithm: ConflictAlgorithm.replace,
-    );
+    await _db.insert('word_preferences', {
+      'lexeme_id': preference.lexemeId,
+      'suspended': preference.suspended ? 1 : 0,
+      'self_declared_known': preference.selfDeclaredKnown ? 1 : 0,
+      'manual_difficult': preference.manualDifficult ? 1 : 0,
+      'updated_at': preference.updatedAt.toIso8601String(),
+      'payload': jsonEncode(preference.toJson()),
+    }, conflictAlgorithm: ConflictAlgorithm.replace);
   }
 
   @override
@@ -450,11 +433,10 @@ class SqliteProgressRepository
     await db.execute(
       'CREATE INDEX IF NOT EXISTS idx_word_preferences_suspended ON word_preferences(suspended)',
     );
-    await db.insert(
-      'meta',
-      {'key': 'schemaVersion', 'value': schemaVersion.toString()},
-      conflictAlgorithm: ConflictAlgorithm.replace,
-    );
+    await db.insert('meta', {
+      'key': 'schemaVersion',
+      'value': schemaVersion.toString(),
+    }, conflictAlgorithm: ConflictAlgorithm.replace);
   }
 
   Future<void> close() async {
@@ -475,19 +457,32 @@ class SqliteProgressRepository
     return _decodeCardState(rows.first['payload']);
   }
 
+  /// SQLite 绑定参数上限。`SQLITE_MAX_VARIABLE_NUMBER` 在 SQLite 3.32.0
+  /// （2020-05-22）之前为 999，之后提升到 32766；Android 7.0~11 自带的
+  /// SQLite 均低于 3.32（3.9/3.18/3.22/3.26/3.28），因此单条语句绑定上千个
+  /// `?` 会直接抛 "too many SQL variables"。
+  /// `getWordStatuses` 会把整个等级词库的 id 传进来（可达数千），必须分片。
+  static const int _maxSqlVariables = 800;
+
   @override
   Future<List<CardState>> getCardStates(List<int> wordIds) async {
     if (wordIds.isEmpty) return [];
-    final placeholders = List.filled(wordIds.length, '?').join(',');
-    final rows = await _db.query(
-      'card_states',
-      where: 'word_id IN ($placeholders)',
-      whereArgs: wordIds,
-    );
     final byId = <int, CardState>{};
-    for (final row in rows) {
-      final state = _decodeCardState(row['payload']);
-      byId[state.wordId] = state;
+    // 分片查询：每片参数个数都远低于旧版 SQLite 的 999 上限，
+    // 同时避免为整个词库构造一条超长 IN 列表。
+    for (var start = 0; start < wordIds.length; start += _maxSqlVariables) {
+      final end = (start + _maxSqlVariables).clamp(0, wordIds.length);
+      final chunk = wordIds.sublist(start, end);
+      final placeholders = List.filled(chunk.length, '?').join(',');
+      final rows = await _db.query(
+        'card_states',
+        where: 'word_id IN ($placeholders)',
+        whereArgs: chunk,
+      );
+      for (final row in rows) {
+        final state = _decodeCardState(row['payload']);
+        byId[state.wordId] = state;
+      }
     }
     return wordIds.map((id) => byId[id]).whereType<CardState>().toList();
   }
@@ -1173,6 +1168,7 @@ class SqliteProgressRepository
   @override
   Future<void> importProgress(Map<String, dynamic> data) async {
     await _db.transaction((txn) async {
+      await txn.delete('meta', where: 'key = ?', whereArgs: [_lexiconIndexKey]);
       for (final table in [
         'card_states',
         'test_runs',

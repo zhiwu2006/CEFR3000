@@ -48,8 +48,6 @@ class FsrsShadowResult {
     required this.grade,
     required this.schedulerVersion,
   });
-
-  Duration get interval => state.due.difference(state.lastReview);
 }
 
 /// Pure candidate scheduler. It never performs I/O and never changes the
@@ -185,17 +183,4 @@ class FsrsScheduler {
 
   double _fromFsrsDifficulty(double fsrsDifficulty) =>
       (1.2 + (fsrsDifficulty - 1) / 9 * 1.8).clamp(1.2, 3.0);
-}
-
-class SchedulerComparison {
-  final CardState legacyState;
-  final FsrsShadowResult fsrs;
-
-  const SchedulerComparison({required this.legacyState, required this.fsrs});
-
-  int get dueDeltaDays => fsrs.state.due.difference(legacyState.due).inDays;
-
-  double get stabilityRatio => legacyState.stability <= 0
-      ? 1
-      : fsrs.state.stability / legacyState.stability;
 }

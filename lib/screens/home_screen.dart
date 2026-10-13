@@ -400,6 +400,12 @@ class HomeScreen extends ConsumerWidget {
     final primaryColor = theme.colorScheme.primary;
     final correctColor = ThemeManager.getCorrectColor(themeStyle);
     final warningColor = ThemeManager.getWarningColor(themeStyle);
+    final activeSession = ref.watch(sessionControllerProvider);
+    final hasPausedTest =
+        activeSession.sessionId.isNotEmpty &&
+        (activeSession.state == SessionState.waiting ||
+            activeSession.state == SessionState.resolved ||
+            activeSession.state == SessionState.saveFailed);
 
     return GridView.count(
       shrinkWrap: true,
@@ -414,8 +420,10 @@ class HomeScreen extends ConsumerWidget {
           context: context,
           theme: theme,
           themeStyle: themeStyle,
-          title: '开始测试',
-          subtitle: '${words.length} 个单词',
+          title: hasPausedTest ? '继续测试' : '开始测试',
+          subtitle: hasPausedTest
+              ? '已测 ${activeSession.testedWordCount} / ${activeSession.totalWords}'
+              : '${words.length} 个单词',
           icon: Icons.play_circle_fill,
           color: primaryColor,
           onTap: () => _startTest(context, ref),
@@ -530,8 +538,6 @@ class HomeScreen extends ConsumerWidget {
     );
   }
 
-
-
   Widget _buildErrorContent(
     BuildContext context,
     ThemeData theme,
@@ -575,6 +581,15 @@ class HomeScreen extends ConsumerWidget {
   void _startTest(BuildContext context, WidgetRef ref) {
     if (_isNavigating) return;
     _isNavigating = true;
+    final activeSession = ref.read(sessionControllerProvider);
+    if (activeSession.sessionId.isNotEmpty &&
+        (activeSession.state == SessionState.waiting ||
+            activeSession.state == SessionState.resolved ||
+            activeSession.state == SessionState.saveFailed)) {
+      _isNavigating = false;
+      Navigator.of(context).pushNamed('/test', arguments: activeSession.config);
+      return;
+    }
     final settings = ref.read(appSettingsProvider);
     final baseConfig = SessionConfig.fromAppSettings(settings);
     ref
@@ -590,7 +605,6 @@ class HomeScreen extends ConsumerWidget {
           }
           final config = baseConfig.copyWith(
             plannedWordIds: plan.items.map((item) => item.wordId).toList(),
-            wordsPerSession: plan.items.length,
           );
           Navigator.of(context).pushNamed('/test', arguments: config);
         })

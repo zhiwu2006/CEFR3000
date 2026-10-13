@@ -91,23 +91,12 @@ class CardState {
     return !today.isBefore(dueDay);
   }
 
-  /// 指定基准时间判定是否到期
-  bool isDueAt([DateTime? at]) {
-    final ref = at ?? DateTime.now();
-    final refDay = DateTime(ref.year, ref.month, ref.day);
-    final dueDay = DateTime(due.year, due.month, due.day);
-    return !refDay.isBefore(dueDay);
-  }
-
   /// 长期掌握需要稳定度和至少两次跨日成功回忆共同满足。
   bool get isMastered =>
       isManuallyKnown || (stability >= 16 && longTermReviews >= 2);
 
   bool get isVerifiedMastered =>
       !isManuallyKnown && stability >= 16 && longTermReviews >= 2;
-
-  /// 使用指定策略判断是否为不熟单词（推荐用法）
-  bool isLeechWith(LeechPolicy policy) => policy.isLeech(this);
 
   /// 是否为不熟单词（使用默认策略，兼容旧代码）
   bool get isLeech => const LeechPolicy().isLeech(this);

@@ -27,7 +27,7 @@ class SessionSettings {
 
   const SessionSettings({
     this.selectedLevels = const ['A1'],
-    this.wordsPerSession = 20,
+    this.wordsPerSession = 100,
     this.timeLimitMs = 2000,
     this.orderPolicy = 'random',
     this.onlyLeeches = false,
@@ -220,7 +220,7 @@ class AlgorithmSettings {
   const AlgorithmSettings({
     this.leechWordsPerSession = 5,
     this.newCardRatio = 0.3,
-    this.dailyNewLimit = 50,
+    this.dailyNewLimit = 100,
     this.leechLapsesThreshold = 2,
     this.leechIncludeMarked = true,
   });

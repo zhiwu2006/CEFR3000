@@ -376,7 +376,9 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                 ).withValues(alpha: 0.2),
                 onSelected: isAvailable
                     ? (selected) {
-                        final newLevels = Set<String>.from(settings.selectedLevelsSet);
+                        final newLevels = Set<String>.from(
+                          settings.selectedLevelsSet,
+                        );
                         if (selected) {
                           newLevels.add(level);
                         } else {
@@ -573,7 +575,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
           switch (profile) {
             case DelayProfile.gentle:
               title = '温和';
-              subtitle = '错题延迟2题，勉强正确延迟4题';
+              subtitle = '错题延迟3题，勉强正确延迟4题';
               break;
             case DelayProfile.standard:
               title = '标准';
@@ -1059,8 +1061,9 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   ) async {
     if (_isRefreshingModels) return;
 
-    final controller =
-        isAiStudio ? _aiStudioApiKeyController : _apiKeyController;
+    final controller = isAiStudio
+        ? _aiStudioApiKeyController
+        : _apiKeyController;
     final currentKey = controller.text.trim();
 
     // 1. 同步当前输入框的 API Key
@@ -1090,11 +1093,13 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
           );
           if (!found) {
             final firstModel = validModels.first.name;
-            await ref.read(appSettingsProvider.notifier).updateAiStudioSettings(
-                  defaultModel: firstModel,
-                );
+            await ref
+                .read(appSettingsProvider.notifier)
+                .updateAiStudioSettings(defaultModel: firstModel);
             if (currentSettings.aiProvider == 'aistudio') {
-              await ref.read(appSettingsProvider.notifier).updateAiProvider(
+              await ref
+                  .read(appSettingsProvider.notifier)
+                  .updateAiProvider(
                     provider: 'aistudio',
                     defaultModel: firstModel,
                   );
@@ -1125,11 +1130,11 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             final firstModel = validModels.first.id;
             await ref
                 .read(appSettingsProvider.notifier)
-                .updateOpenRouterSettings(
-                  defaultModel: firstModel,
-                );
+                .updateOpenRouterSettings(defaultModel: firstModel);
             if (currentSettings.aiProvider == 'openrouter') {
-              await ref.read(appSettingsProvider.notifier).updateAiProvider(
+              await ref
+                  .read(appSettingsProvider.notifier)
+                  .updateAiProvider(
                     provider: 'openrouter',
                     defaultModel: firstModel,
                   );
@@ -1822,7 +1827,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     return ListTile(
       leading: const Icon(Icons.file_upload, color: AppTheme.primaryColor),
       title: const Text('导入进度'),
-      subtitle: const Text('从 progress_export.json 导入学习进度'),
+      subtitle: const Text('选择快照文件导入（会覆盖当前进度，导入前自动备份）'),
       onTap: () async {
         await _importProgress(context, ref);
       },
@@ -2548,6 +2553,88 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     );
   }
 
+  /// 进度快照文件名规则：兼容历史的固定名 `progress_export.json` 与新的
+  /// 带时间戳名 `progress_export_20260911_090811.json`。
+  static final RegExp _progressSnapshotPattern = RegExp(
+    r'^progress_export(_\d{8}_\d{6})?\.json$',
+  );
+
+  static String _two(int value) => value.toString().padLeft(2, '0');
+
+  /// 用于文件名的紧凑时间戳（本地时间）。
+  static String _fileStamp(DateTime time) =>
+      '${time.year}${_two(time.month)}${_two(time.day)}'
+      '_${_two(time.hour)}${_two(time.minute)}${_two(time.second)}';
+
+  static String _readableTime(DateTime time) =>
+      '${time.year}-${_two(time.month)}-${_two(time.day)} '
+      '${_two(time.hour)}:${_two(time.minute)}:${_two(time.second)}';
+
+  /// 导入/导出目录：优先公共 Download，其次应用下载目录，最后文档目录。
+  Future<Directory> _transferDirectory() async {
+    try {
+      final public = Directory('/storage/emulated/0/Download');
+      if (await public.exists()) return public;
+    } catch (_) {
+      // 非 Android 平台不存在该路径，走下面的回退。
+    }
+    return await getDownloadsDirectory() ??
+        await getApplicationDocumentsDirectory();
+  }
+
+  /// 在清空现有数据之前校验导出负载的基本结构。
+  ///
+  /// 返回错误描述；`null` 表示通过。这里只做结构级校验（版本、必需字段、
+  /// 列表元素类型），真正的字段级解析仍由仓储负责——目的是让明显损坏或
+  /// 版本不符的文件在进入「先清空、再写入」流程之前就被拒绝。
+  static String? _validateProgressPayload(Map<String, dynamic> data) {
+    const supportedVersions = {1, 2, 3};
+    final version = (data['version'] as num?)?.toInt();
+    if (version == null) return '缺少 version 字段';
+    if (!supportedVersions.contains(version)) {
+      return '不支持的版本 $version';
+    }
+    if (data['cardStates'] is! List) return '缺少 cardStates 数组';
+    const listFields = [
+      'cardStates',
+      'testRuns',
+      'attempts',
+      'reviewEvents',
+      'exposureEvents',
+      'lexemes',
+      'senses',
+      'learningItems',
+      'learningItemStates',
+      'wordPreferences',
+    ];
+    for (final field in listFields) {
+      final value = data[field];
+      if (value == null) continue; // 旧版本可能没有该字段。
+      if (value is! List) return '字段 $field 不是数组';
+      for (var i = 0; i < value.length; i++) {
+        if (value[i] is! Map) return '字段 $field 的第 ${i + 1} 个元素不是对象';
+      }
+    }
+    return null;
+  }
+
+  /// 导入前把当前进度写入应用支持目录。返回备份路径；失败时返回 null
+  /// （不阻断导入，但会如实告知用户没有备份成功）。
+  Future<String?> _backupCurrentProgress(WidgetRef ref) async {
+    try {
+      final data = await ref.read(progressRepositoryProvider).exportProgress();
+      final dir = await getApplicationSupportDirectory();
+      final file = File(
+        '${dir.path}/progress-backup-${_fileStamp(DateTime.now())}.json',
+      );
+      await file.writeAsString(jsonEncode(data));
+      return file.path;
+    } catch (e) {
+      debugPrint('Failed to back up progress before import: $e');
+      return null;
+    }
+  }
+
   Future<void> _exportProgress(BuildContext context, WidgetRef ref) async {
     try {
       final repo = ref.read(progressRepositoryProvider);
@@ -2568,7 +2655,10 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             await getApplicationDocumentsDirectory();
       }
 
-      final path = '${dir.path}/progress_export.json';
+      // 带时间戳：既不覆盖上一次导出的快照，也让导入方能明确列出并选择
+      // 具体哪一份文件，避免 Downloads 里的任意旧快照被静默导入。
+      final path =
+          '${dir.path}/progress_export_${_fileStamp(DateTime.now())}.json';
       final file = File(path);
       await file.writeAsString(jsonEncode(data));
 
@@ -2586,32 +2676,94 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
 
   Future<void> _importProgress(BuildContext context, WidgetRef ref) async {
     try {
-      Directory dir;
-      try {
-        dir = Directory('/storage/emulated/0/Download');
-        if (!await dir.exists()) {
-          dir =
-              await getDownloadsDirectory() ??
-              await getApplicationDocumentsDirectory();
+      final dir = await _transferDirectory();
+
+      // 不再固定读单个文件名：列出目录下所有快照，由用户在确认弹窗中
+      // 选择要导入哪一份。这样 Downloads 里堆积的旧快照不会被静默覆盖。
+      final entries = <({File file, DateTime modified})>[];
+      await for (final entity in dir.list(followLinks: false)) {
+        if (entity is! File) continue;
+        if (!_progressSnapshotPattern.hasMatch(entity.uri.pathSegments.last)) {
+          continue;
         }
-      } catch (_) {
-        dir =
-            await getDownloadsDirectory() ??
-            await getApplicationDocumentsDirectory();
+        try {
+          entries.add((file: entity, modified: (await entity.stat()).modified));
+        } catch (_) {
+          // 读不到时间戳的文件跳过。
+        }
       }
 
-      final path = '${dir.path}/progress_export.json';
-      final file = File(path);
-      if (!await file.exists()) {
+      if (entries.isEmpty) {
         if (!context.mounted) return;
         ScaffoldMessenger.of(
           context,
-        ).showSnackBar(SnackBar(content: Text('未找到文件: $path')));
+        ).showSnackBar(SnackBar(content: Text('未找到导出文件（目录: ${dir.path}）')));
+        return;
+      }
+      entries.sort((a, b) => b.modified.compareTo(a.modified));
+
+      // 选择文件 + 覆盖确认合并在同一个弹窗，避免「点一下就清库」。
+      if (!context.mounted) return;
+      final selected = await showDialog<File>(
+        context: context,
+        builder: (dialogContext) => SimpleDialog(
+          title: const Text('导入学习进度'),
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(24, 0, 24, 12),
+              child: Text(
+                '导入会用所选快照整体覆盖当前全部学习进度，此操作不可撤销。'
+                '导入前会自动备份当前进度。',
+                style: TextStyle(
+                  fontSize: 12,
+                  color: Theme.of(dialogContext).colorScheme.error,
+                ),
+              ),
+            ),
+            for (final entry in entries)
+              SimpleDialogOption(
+                onPressed: () => Navigator.of(dialogContext).pop(entry.file),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(entry.file.uri.pathSegments.last),
+                    Text(
+                      _readableTime(entry.modified),
+                      style: const TextStyle(fontSize: 11, color: Colors.grey),
+                    ),
+                  ],
+                ),
+              ),
+            SimpleDialogOption(
+              onPressed: () => Navigator.of(dialogContext).pop(),
+              child: const Text('取消'),
+            ),
+          ],
+        ),
+      );
+      if (selected == null || !context.mounted) return;
+
+      final content = await selected.readAsString();
+      final decoded = jsonDecode(content);
+      if (decoded is! Map) {
+        if (!context.mounted) return;
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('导入失败: 文件根节点不是 JSON 对象')));
+        return;
+      }
+      final data = Map<String, dynamic>.from(decoded);
+      final problem = _validateProgressPayload(data);
+      if (problem != null) {
+        if (!context.mounted) return;
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('导入失败: 文件校验未通过（$problem）')));
         return;
       }
 
-      final content = await file.readAsString();
-      final data = jsonDecode(content) as Map<String, dynamic>;
+      // 校验通过后才进入破坏性流程；先备份，失败时用户仍可回到导入前状态。
+      final backupPath = await _backupCurrentProgress(ref);
 
       final repo = ref.read(progressRepositoryProvider);
       await repo.importProgress(data);
@@ -2622,9 +2774,15 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
       ref.invalidate(leechWordStatusesProvider);
 
       if (!context.mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('导入成功: $path')));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            backupPath == null
+                ? '导入成功: ${selected.path}'
+                : '导入成功: ${selected.path}\n已备份原进度: $backupPath',
+          ),
+        ),
+      );
     } catch (e) {
       if (!context.mounted) return;
       ScaffoldMessenger.of(

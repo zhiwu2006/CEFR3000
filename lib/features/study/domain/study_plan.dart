@@ -1,10 +1,10 @@
-import '../../../models/card_state.dart';
 import '../../memory/domain/recall_models.dart';
 
 enum PlanReason { resume, relearning, overdue, leech, newCard, extraPractice }
 
 class StudyCandidate {
   final int wordId;
+
   /// Stable LearningItem identity.  Legacy recognition candidates may omit it,
   /// but skill-specific plans must use this key so two abilities on one word
   /// never collapse into a single queue entry.
@@ -18,6 +18,7 @@ class StudyCandidate {
   final bool isLeech;
   final bool isRelearning;
   final int estimatedSeconds;
+  final bool needsConsolidation;
 
   const StudyCandidate({
     required this.wordId,
@@ -31,10 +32,10 @@ class StudyCandidate {
     required this.isLeech,
     required this.isRelearning,
     this.estimatedSeconds = 25,
+    this.needsConsolidation = false,
   });
 
-  String get uniqueKey =>
-      learningItemId ?? 'legacy:$wordId:${skill.name}';
+  String get uniqueKey => learningItemId ?? 'legacy:$wordId:${skill.name}';
 }
 
 class StudyPolicy {
@@ -95,15 +96,11 @@ class StudyPlan {
   });
 
   bool get isEmpty => items.isEmpty;
-  int get reviewItemCount =>
-      items.where((item) => item.reason != PlanReason.newCard).length;
 
   Set<int> get wordIds => items.map((item) => item.wordId).toSet();
 
-  Set<String> get learningItemIds => items
-      .map((item) => item.learningItemId)
-      .whereType<String>()
-      .toSet();
+  Set<String> get learningItemIds =>
+      items.map((item) => item.learningItemId).whereType<String>().toSet();
 
   List<PlannedItem> itemsForSkill(LearningSkill skill) =>
       items.where((item) => item.skill == skill).toList(growable: false);
@@ -129,6 +126,7 @@ class StudyPlanner {
         .toList();
 
     int priority(StudyCandidate candidate) {
+      if (candidate.needsConsolidation) return -1;
       if (candidate.isRelearning) return 0;
       if (candidate.isLeech) return 1;
       if (candidate.dueAt != null && !candidate.dueAt!.isAfter(timestamp)) {
@@ -144,9 +142,7 @@ class StudyPlanner {
       final aDue = a.dueAt ?? DateTime.fromMillisecondsSinceEpoch(0);
       final bDue = b.dueAt ?? DateTime.fromMillisecondsSinceEpoch(0);
       final byDue = aDue.compareTo(bDue);
-      return byDue != 0
-          ? byDue
-          : a.uniqueKey.compareTo(b.uniqueKey);
+      return byDue != 0 ? byDue : a.uniqueKey.compareTo(b.uniqueKey);
     });
 
     final selected = <PlannedItem>[];
@@ -157,6 +153,7 @@ class StudyPlanner {
     for (final candidate in filtered) {
       if (selected.length >= policy.maxItems) break;
       if (candidate.isRelearning &&
+          !candidate.needsConsolidation &&
           relearningCount >= policy.maxRelearningItems) {
         continue;
       }
@@ -202,19 +199,6 @@ class StudyPlanner {
       items: List.unmodifiable(selected),
       estimatedSeconds: seconds,
       newItemCount: newLexemes.length,
-    );
-  }
-
-  StudyCandidate candidateFromCardState(
-    CardState state, {
-    bool isLeech = false,
-  }) {
-    return StudyCandidate(
-      wordId: state.wordId,
-      dueAt: state.due,
-      isNew: false,
-      isLeech: isLeech,
-      isRelearning: state.lapses > 0 && state.stability < 2,
     );
   }
 }

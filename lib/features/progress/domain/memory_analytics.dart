@@ -61,16 +61,19 @@ class MemoryAnalytics {
     int windowDays,
   ) {
     final events = committed(source);
-    final byWord = <int, List<ReviewEvent>>{};
+    // 按 (wordId, skill) 组合键分组，避免将不同技能类型的复习事件
+    // （如识别 vs 产出回忆）混入同一观测样本。
+    final byKey = <(int, String), List<ReviewEvent>>{};
     for (final event in events) {
       if (!event.independentRecall || !event.isDueReview) continue;
-      byWord.putIfAbsent(event.resultingState.wordId, () => []).add(event);
+      final key = (event.resultingState.wordId, event.skill);
+      byKey.putIfAbsent(key, () => []).add(event);
     }
     var eligible = 0;
     var success = 0;
-    for (final eventsForWord in byWord.values) {
+    for (final eventsForKey in byKey.values) {
       ReviewEvent? previous;
-      for (final event in eventsForWord) {
+      for (final event in eventsForKey) {
         if (previous != null &&
             event.createdAt.difference(previous.createdAt).inHours >=
                 windowDays * 24) {

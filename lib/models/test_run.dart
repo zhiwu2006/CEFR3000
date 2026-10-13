@@ -1,13 +1,12 @@
 import 'package:hive/hive.dart';
 import 'package:json_annotation/json_annotation.dart';
 import 'attempt.dart';
-import '../domain/srs.dart';
 
 part 'test_run.g.dart';
 
 /// 测试会话记录模型类
 @HiveType(typeId: 3)
-@JsonSerializable()
+@JsonSerializable(explicitToJson: true)
 class TestRun {
   @HiveField(0)
   final String id; // UUID
@@ -42,6 +41,34 @@ class TestRun {
   @HiveField(10)
   final bool onlyLeeches; // 是否只练不熟
 
+  /// 本轮结束仍需巩固的词；旧记录默认空集合。
+  @HiveField(11, defaultValue: <int>[])
+  final List<int> unresolvedWordIds;
+
+  /// 恢复待巩固集合时回看的最近轮数上限。
+  ///
+  /// [pendingConsolidation] 对每个词只取「最近一次出现」所在的那一轮，因此
+  /// 覆盖全部历史并无必要。调用方原先传 100000，会把每条 TestRun（含全部
+  /// attempts）都反序列化进内存，历史越长启动与建计划越慢。改为固定回看窗口后，
+  /// 只有窗口内再未出现过的词会失去「待巩固」标记——而这些词本就已经很久没被
+  /// 重新触及，与「已巩固」的语义一致。
+  static const int pendingConsolidationLookbackRuns = 200;
+
+  /// 按每个词最近一轮的结果恢复待巩固集合（支持跨重启）。
+  static Set<int> pendingConsolidation(Iterable<TestRun> runs) {
+    final ordered = runs.where((run) => run.isFinished).toList()
+      ..sort((a, b) => b.startedAt.compareTo(a.startedAt));
+    final seen = <int>{};
+    final pending = <int>{};
+    for (final run in ordered) {
+      final unresolved = run.unresolvedWordIds.toSet();
+      for (final id in {...run.attempts.map((a) => a.wordId), ...unresolved}) {
+        if (seen.add(id) && unresolved.contains(id)) pending.add(id);
+      }
+    }
+    return pending;
+  }
+
   const TestRun({
     required this.id,
     required this.startedAt,
@@ -54,6 +81,7 @@ class TestRun {
     required this.attempts,
     required this.orderPolicy,
     required this.onlyLeeches,
+    this.unresolvedWordIds = const [],
   });
 
   factory TestRun.fromJson(Map<String, dynamic> json) =>
@@ -101,12 +129,6 @@ class TestRun {
     return correctCount / attempts.length;
   }
 
-  double calculateFirstAccuracy() {
-    if (firstAttempts.isEmpty) return 0.0;
-    return firstAttempts.where((attempt) => attempt.isCorrect).length /
-        firstAttempts.length;
-  }
-
   Set<int> get firstWrongWordIds => firstAttempts
       .where((attempt) => attempt.isWrong || attempt.isTimeout)
       .map((attempt) => attempt.wordId)
@@ -143,42 +165,9 @@ class TestRun {
     return (totalRt / validAttempts.length).round();
   }
 
-  /// 计算中位反应时间
-  int calculateMedianRt() {
-    if (attempts.isEmpty) return 0;
-    final validRts = attempts
-        .where((a) => !a.isTimeout)
-        .map((a) => a.rtMs)
-        .toList();
-    if (validRts.isEmpty) return 0;
-    validRts.sort();
-    final middle = validRts.length ~/ 2;
-    if (validRts.length % 2 == 0) {
-      return ((validRts[middle - 1] + validRts[middle]) / 2).round();
-    } else {
-      return validRts[middle];
-    }
-  }
-
   /// 获取错题列表
   List<Attempt> get wrongAttempts =>
       attempts.where((a) => a.isWrong || a.isTimeout).toList();
-
-  /// 获取勉强正确的题目（正确但反应时间过长）
-  List<Attempt> getSlowCorrectAttempts(double slowThreshold) {
-    return attempts
-        .where(
-          (a) =>
-              SrsAlgorithm.calculateQuality(
-                result: a.result,
-                reactionTime: a.rtMs,
-                timeLimit: timeLimitMs,
-                slowThresholdMultiplier: slowThreshold,
-              ) ==
-              3,
-        )
-        .toList();
-  }
 
   /// 添加答题记录
   TestRun addAttempt(Attempt attempt) =>
@@ -204,6 +193,7 @@ class TestRun {
     List<Attempt>? attempts,
     String? orderPolicy,
     bool? onlyLeeches,
+    List<int>? unresolvedWordIds,
   }) => TestRun(
     id: id ?? this.id,
     startedAt: startedAt ?? this.startedAt,
@@ -216,6 +206,7 @@ class TestRun {
     attempts: attempts ?? this.attempts,
     orderPolicy: orderPolicy ?? this.orderPolicy,
     onlyLeeches: onlyLeeches ?? this.onlyLeeches,
+    unresolvedWordIds: unresolvedWordIds ?? this.unresolvedWordIds,
   );
 
   @override

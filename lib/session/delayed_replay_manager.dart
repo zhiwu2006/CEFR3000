@@ -7,8 +7,9 @@ import 'session_models.dart';
 /// 延迟项使用“允许出现的已结算题号”，而不是每道题都修改的倒计数器。
 /// 这样主队列耗尽时仍能确定性地选择下一项，也不会因尾部没有占位题而死锁。
 class DelayedReplayManager {
-  /// 兼容旧代码的默认上限；实际会话以 SessionConfig 为准。
-  static const int maxRetries = 3;
+  /// 重测至少间隔的题数。与 `SessionData.correctionStreak` 要求的
+  /// 「至少三道其他题」一致，延迟预设不得低于它，否则设置会被静默改写。
+  static const int minRetryGap = 3;
 
   const DelayedReplayManager();
 
@@ -46,9 +47,9 @@ class DelayedReplayManager {
         : 0;
     final nextRetryCount =
         (sessionRetryCount > existingRetryCount
-                ? sessionRetryCount
-                : existingRetryCount) +
-            1;
+            ? sessionRetryCount
+            : existingRetryCount) +
+        1;
 
     if (nextRetryCount > retryLimit || retryLimit == 0) {
       final withoutWord = List<DelayedItem>.from(delayedQueue)
@@ -59,7 +60,8 @@ class DelayedReplayManager {
     final delay = attempt.isWrong || attempt.isTimeout
         ? config.wrongDelay
         : config.slowDelay;
-    final eligibleAfter = completedQuestionCount + delay.clamp(1, 1000);
+    final eligibleAfter =
+        completedQuestionCount + delay.clamp(minRetryGap, 1000);
     final replacement = DelayedItem(
       wordId: attempt.wordId,
       eligibleAfterQuestion: eligibleAfter,
@@ -85,7 +87,10 @@ class DelayedReplayManager {
         .where((item) => item.isEligibleAt(completedQuestionCount))
         .toList();
     if (matured.isEmpty) {
-      return (mainQueue: List<Word>.from(mainQueue), delayedQueue: delayedQueue);
+      return (
+        mainQueue: List<Word>.from(mainQueue),
+        delayedQueue: delayedQueue,
+      );
     }
 
     final maturedIds = matured.map((item) => item.wordId).toSet();
@@ -94,7 +99,9 @@ class DelayedReplayManager {
         .toList();
     final result = List<Word>.from(mainQueue);
     for (final item in matured.reversed) {
-      final word = candidatePool.where((candidate) => candidate.id == item.wordId);
+      final word = candidatePool.where(
+        (candidate) => candidate.id == item.wordId,
+      );
       if (word.isNotEmpty) result.insert(0, word.first);
     }
     return (mainQueue: result, delayedQueue: remaining);

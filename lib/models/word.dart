@@ -56,12 +56,6 @@ class Word {
     return pos;
   }
 
-  /// 检查是否为同一级别
-  bool isSameLevel(String otherLevel) => level == otherLevel;
-
-  /// 检查是否为同一主要词性
-  bool isSameMajorPos(String otherPos) => majorPos == otherPos.toLowerCase();
-
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||

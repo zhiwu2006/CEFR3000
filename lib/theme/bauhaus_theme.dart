@@ -378,30 +378,6 @@ class BauhausTheme {
     );
   }
 
-  /// 获取几何装饰形状
-  static Widget getGeometricDecoration({required int index, double size = 12}) {
-    final colors = [primaryRed, primaryBlue, primaryYellow];
-    final color = colors[index % 3];
-
-    switch (index % 3) {
-      case 0: // 圆形
-        return Container(
-          width: size,
-          height: size,
-          decoration: BoxDecoration(color: color, shape: BoxShape.circle),
-        );
-      case 1: // 方形
-        return Container(width: size, height: size, color: color);
-      case 2: // 三角形（旋转的方形）
-        return Transform.rotate(
-          angle: 0.785398, // 45度
-          child: Container(width: size * 0.7, height: size * 0.7, color: color),
-        );
-      default:
-        return const SizedBox.shrink();
-    }
-  }
-
   /// 获取级别徽章颜色
   static Color getLevelBadgeColor(String level) {
     switch (level) {

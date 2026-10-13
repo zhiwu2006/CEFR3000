@@ -6,12 +6,21 @@ import 'tts_service.dart';
 class FlutterTtsService implements TtsService {
   late FlutterTts _flutterTts;
   bool _isInitialized = false;
+  Future<void>? _initializing;
   bool _isPlaying = false;
 
   @override
   Future<void> init({String locale = 'en-US'}) async {
     if (_isInitialized) return;
+    final pending = _initializing ??= _initialize(locale);
+    try {
+      await pending;
+    } finally {
+      if (identical(_initializing, pending)) _initializing = null;
+    }
+  }
 
+  Future<void> _initialize(String locale) async {
     _flutterTts = FlutterTts();
 
     // 尝试设置谷歌TTS引擎（仅Android有效，提供更高质量语音）

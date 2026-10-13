@@ -77,9 +77,9 @@ class _LeechWordsScreenState extends ConsumerState<LeechWordsScreen> {
     ref.invalidate(todayStudyPlanProvider);
     ref.invalidate(todayRecognitionPlanProvider);
     ref.invalidate(todayProductionPlanProvider);
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('已暂不学习，之后可在词库中恢复')),
-    );
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(const SnackBar(content: Text('已暂不学习，之后可在词库中恢复')));
   }
 
   Future<void> _restoreSelected() async {
@@ -95,9 +95,9 @@ class _LeechWordsScreenState extends ConsumerState<LeechWordsScreen> {
     ref.invalidate(todayStudyPlanProvider);
     ref.invalidate(todayRecognitionPlanProvider);
     ref.invalidate(todayProductionPlanProvider);
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('已恢复到学习计划')),
-    );
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(const SnackBar(content: Text('已恢复到学习计划')));
   }
 
   String _formatDate(DateTime date, {bool includeTime = false}) {
@@ -721,26 +721,18 @@ class _LeechWordsScreenState extends ConsumerState<LeechWordsScreen> {
 
     final words = statuses.map((s) => s.word).toList();
     final settings = ref.read(appSettingsProvider);
-    final delayConfig = settings.delayConfig;
 
-    final config = SessionConfig(
-      levels: settings.selectedLevelsSet,
+    // 统一从 SessionConfig.fromAppSettings 派生，再覆盖 leech 专属字段。
+    // 手工构造 SessionConfig 会漏掉 srsConfig / maxRetriesPerWord /
+    // maxTotalAttempts / cooldownWindow / plannedWordIds，也绕过时间上限与
+    // 灵敏度等钳制，导致 leech 会话与普通会话的调度参数静默不一致。
+    final config = SessionConfig.fromAppSettings(settings).copyWith(
       wordsPerSession: min(
         words.length,
         settings.leechWordsPerSession.clamp(5, 100),
       ),
-      timeLimitMs: settings.timeLimitMs,
       orderPolicy: 'random',
       onlyLeeches: true,
-      wrongDelay: delayConfig.wrongDelay,
-      slowDelay: delayConfig.slowDelay,
-      slowThreshold: settings.slowThreshold,
-      newCardRatio: settings.newCardRatio,
-      dailyNewLimit: settings.dailyNewLimit,
-      ttsAutoPlay: settings.ttsAutoPlay,
-      ttsOnWrong: settings.ttsOnWrong,
-      leechLapsesThreshold: settings.leechLapsesThreshold,
-      leechIncludeMarked: settings.leechIncludeMarked,
     );
 
     Navigator.of(context).pushNamed('/test', arguments: config);
@@ -763,23 +755,11 @@ class _LeechWordsScreenState extends ConsumerState<LeechWordsScreen> {
 
       if (sessionId.isNotEmpty) {
         final settings = ref.read(appSettingsProvider);
-        final delayConfig = settings.delayConfig;
 
-        final config = SessionConfig(
-          levels: settings.selectedLevelsSet,
+        final config = SessionConfig.fromAppSettings(settings).copyWith(
           wordsPerSession: _selectedIds.length,
-          timeLimitMs: settings.timeLimitMs,
           orderPolicy: 'random',
           onlyLeeches: true,
-          wrongDelay: delayConfig.wrongDelay,
-          slowDelay: delayConfig.slowDelay,
-          slowThreshold: settings.slowThreshold,
-          newCardRatio: settings.newCardRatio,
-          dailyNewLimit: settings.dailyNewLimit,
-          ttsAutoPlay: settings.ttsAutoPlay,
-          ttsOnWrong: settings.ttsOnWrong,
-          leechLapsesThreshold: settings.leechLapsesThreshold,
-          leechIncludeMarked: settings.leechIncludeMarked,
         );
 
         Navigator.of(context).pushNamed('/test', arguments: config);
@@ -954,23 +934,11 @@ class _LeechWordsScreenState extends ConsumerState<LeechWordsScreen> {
 
       if (sessionId.isNotEmpty) {
         final settings = ref.read(appSettingsProvider);
-        final delayConfig = settings.delayConfig;
 
-        final config = SessionConfig(
-          levels: settings.selectedLevelsSet,
+        final config = SessionConfig.fromAppSettings(settings).copyWith(
           wordsPerSession: 1,
-          timeLimitMs: settings.timeLimitMs,
           orderPolicy: 'random',
           onlyLeeches: true,
-          wrongDelay: delayConfig.wrongDelay,
-          slowDelay: delayConfig.slowDelay,
-          slowThreshold: settings.slowThreshold,
-          newCardRatio: settings.newCardRatio,
-          dailyNewLimit: settings.dailyNewLimit,
-          ttsAutoPlay: settings.ttsAutoPlay,
-          ttsOnWrong: settings.ttsOnWrong,
-          leechLapsesThreshold: settings.leechLapsesThreshold,
-          leechIncludeMarked: settings.leechIncludeMarked,
         );
 
         Navigator.of(context).pushNamed('/test', arguments: config);

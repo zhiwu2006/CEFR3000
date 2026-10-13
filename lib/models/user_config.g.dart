@@ -296,8 +296,8 @@ SessionSettings _$SessionSettingsFromJson(Map<String, dynamic> json) =>
               ?.map((e) => e as String)
               .toList() ??
           const ['A1'],
-      wordsPerSession: (json['wordsPerSession'] as num?)?.toInt() ?? 20,
-      timeLimitMs: (json['timeLimitMs'] as num?)?.toInt() ?? 0,
+      wordsPerSession: (json['wordsPerSession'] as num?)?.toInt() ?? 100,
+      timeLimitMs: (json['timeLimitMs'] as num?)?.toInt() ?? 2000,
       orderPolicy: json['orderPolicy'] as String? ?? 'random',
       onlyLeeches: json['onlyLeeches'] as bool? ?? false,
       learningMode: json['learningMode'] as String? ?? 'standard',
@@ -368,7 +368,7 @@ AlgorithmSettings _$AlgorithmSettingsFromJson(
 ) => AlgorithmSettings(
   leechWordsPerSession: (json['leechWordsPerSession'] as num?)?.toInt() ?? 5,
   newCardRatio: (json['newCardRatio'] as num?)?.toDouble() ?? 0.3,
-  dailyNewLimit: (json['dailyNewLimit'] as num?)?.toInt() ?? 50,
+  dailyNewLimit: (json['dailyNewLimit'] as num?)?.toInt() ?? 100,
   leechLapsesThreshold: (json['leechLapsesThreshold'] as num?)?.toInt() ?? 2,
   leechIncludeMarked: json['leechIncludeMarked'] as bool? ?? true,
 );

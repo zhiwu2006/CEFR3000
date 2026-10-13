@@ -8,9 +8,7 @@ export 'digitalism_theme.dart';
 class AppTheme {
   // 主色调 - 深蓝色渐变风格
   static const Color primaryColor = Color(0xFF2E3A59); // 深蓝色
-  static const Color primaryVariant = Color(0xFF1A2332);
   static const Color secondaryColor = Color(0xFF4A5F7A); // 中蓝色
-  static const Color secondaryVariant = Color(0xFF364B66);
 
   // 渐变色
   static const Color gradientStart = Color(0xFF2E3A59); // 深蓝色
@@ -20,7 +18,6 @@ class AppTheme {
   static const Color correctColor = Color(0xFF4CAF50); // 绿色 - 正确
   static const Color wrongColor = Color(0xFFF44336); // 红色 - 错误
   static const Color warningColor = Color(0xFFFF9800); // 橙色 - 警告
-  static const Color timeoutColor = Color(0xFF9E9E9E); // 灰色 - 超时
 
   // 背景色 - 渐变背景
   static const Color backgroundColor = Color(0xFF2E3A59);
@@ -30,7 +27,6 @@ class AppTheme {
   // 文字色彩
   static const Color textPrimary = Color(0xFF212121);
   static const Color textSecondary = Color(0xFF757575);
-  static const Color textHint = Color(0xFF9E9E9E);
 
   // 高对比度主题色彩
   static const Color highContrastBackground = Color(0xFF000000);
@@ -179,64 +175,6 @@ class AppTheme {
     );
   }
 
-  /// 选项按钮样式
-  static BoxDecoration getOptionButtonDecoration({
-    required bool isSelected,
-    required bool isCorrect,
-    required bool isWrong,
-    required bool isHighContrast,
-  }) {
-    Color backgroundColor;
-    Color borderColor;
-
-    if (isHighContrast) {
-      if (isSelected && isCorrect) {
-        backgroundColor = highContrastCorrect;
-        borderColor = highContrastCorrect;
-      } else if (isSelected && isWrong) {
-        backgroundColor = highContrastWrong;
-        borderColor = highContrastWrong;
-      } else if (isCorrect) {
-        backgroundColor = highContrastSurface;
-        borderColor = highContrastCorrect;
-      } else {
-        backgroundColor = highContrastSurface;
-        borderColor = highContrastText;
-      }
-    } else {
-      if (isSelected && isCorrect) {
-        backgroundColor = correctColor.withValues(alpha: 0.2);
-        borderColor = correctColor;
-      } else if (isSelected && isWrong) {
-        backgroundColor = wrongColor.withValues(alpha: 0.2);
-        borderColor = wrongColor;
-      } else if (isCorrect) {
-        backgroundColor = correctColor.withValues(alpha: 0.1);
-        borderColor = correctColor;
-      } else {
-        backgroundColor = surfaceColor;
-        borderColor = Colors.grey.shade300;
-      }
-    }
-
-    return BoxDecoration(
-      color: backgroundColor,
-      border: Border.all(color: borderColor, width: 2),
-      borderRadius: BorderRadius.circular(12),
-    );
-  }
-
-  /// 进度环样式
-  static Color getProgressRingColor(double progress, bool isHighContrast) {
-    if (isHighContrast) {
-      return progress > 0.3 ? highContrastCorrect : highContrastWrong;
-    }
-
-    if (progress > 0.6) return correctColor;
-    if (progress > 0.3) return warningColor;
-    return wrongColor;
-  }
-
   /// 难度徽章颜色
   static Color getLevelBadgeColor(String level) {
     switch (level) {
@@ -253,26 +191,9 @@ class AppTheme {
     }
   }
 
-  /// 统计卡片颜色
-  static Color getStatsCardColor(String type) {
-    switch (type) {
-      case 'accuracy':
-        return correctColor;
-      case 'speed':
-        return primaryColor;
-      case 'progress':
-        return secondaryColor;
-      case 'streak':
-        return warningColor;
-      default:
-        return Colors.grey;
-    }
-  }
-
   /// 动画持续时间
   static const Duration fastAnimation = Duration(milliseconds: 150);
   static const Duration normalAnimation = Duration(milliseconds: 250);
-  static const Duration slowAnimation = Duration(milliseconds: 400);
 
   /// 边距和间距
   static const double paddingSmall = 8.0;
@@ -289,35 +210,6 @@ class AppTheme {
       desktop: basePadding * 2.0,
     );
   }
-
-  /// 响应式字体大小
-  static double getResponsiveFontSize(
-    BuildContext context,
-    double baseFontSize,
-  ) {
-    return ResponsiveLayout.getFontSize(
-      context,
-      baseFontSize: baseFontSize,
-      mobileScale: 1.0,
-      tabletScale: 1.2,
-      desktopScale: 1.4,
-    );
-  }
-
-  /// 圆角半径
-  static const double radiusSmall = 4.0;
-  static const double radiusMedium = 8.0;
-  static const double radiusLarge = 12.0;
-  static const double radiusXLarge = 16.0;
-
-  /// 阴影
-  static List<BoxShadow> get cardShadow => [
-    BoxShadow(
-      color: Colors.black.withValues(alpha: 0.1),
-      blurRadius: 8,
-      offset: const Offset(0, 2),
-    ),
-  ];
 
   static List<BoxShadow> get buttonShadow => [
     BoxShadow(
@@ -459,8 +351,4 @@ class AppTheme {
       ),
     );
   }
-
-  /// 获取兼容的主题（为了向后兼容）
-  static ThemeData get lightTheme => getLightTheme(null);
-  static ThemeData get highContrastTheme => getHighContrastTheme(null);
 }

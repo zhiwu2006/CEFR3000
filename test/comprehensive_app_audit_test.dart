@@ -191,7 +191,9 @@ void main() {
             ),
           ],
           child: MaterialApp(
-            home: SummaryScreen(sessionData: fakeSession),
+            home: SummaryScreen(
+              sessionData: fakeSession.copyWith(unresolvedWordIds: {2}),
+            ),
           ),
         ),
       );
@@ -200,6 +202,9 @@ void main() {
 
       // 3. 验证结算界面关键指标与展示
       expect(find.text('测试总结'), findsOneWidget);
+      expect(find.textContaining('待巩固 1 词，已保留到下一组优先安排'), findsOneWidget);
+      expect(find.textContaining('尾部没有足够的间隔题'), findsOneWidget);
+      expect(find.textContaining('达到重测／总作答上限'), findsOneWidget);
       expect(find.text('准确率'), findsOneWidget);
       expect(find.text('67%'), findsOneWidget); // 四舍五入百分比展示
       expect(find.text('总题数'), findsOneWidget);
@@ -267,9 +272,7 @@ void main() {
               },
             ),
           ],
-          child: const MaterialApp(
-            home: StatsScreen(),
-          ),
+          child: const MaterialApp(home: StatsScreen()),
         ),
       );
       await tester.pump();
@@ -397,9 +400,7 @@ void main() {
               _AuditFakeWordRepository(testWords),
             ),
           ],
-          child: const MaterialApp(
-            home: Scaffold(body: SettingsScreen()),
-          ),
+          child: const MaterialApp(home: Scaffold(body: SettingsScreen())),
         ),
       );
       await tester.pump();
@@ -435,9 +436,7 @@ void main() {
               ),
             ),
           ],
-          child: const MaterialApp(
-            home: HomeScreen(),
-          ),
+          child: const MaterialApp(home: HomeScreen()),
         ),
       );
       await tester.pump();

@@ -32,14 +32,6 @@ class ContentTaskEligibility {
   });
 
   bool get requiresSelfCheck => confidence == ContentConfidence.legacyFallback;
-
-  String get reasonLabel => switch (reason) {
-    ContentEligibilityReason.qualified => '已审核内容',
-    ContentEligibilityReason.missingHeadword => '缺少英文词条',
-    ContentEligibilityReason.missingDefinition => '缺少可靠释义',
-    ContentEligibilityReason.missingContext => '缺少明确语境',
-    ContentEligibilityReason.legacyContent => '传统词库降级练习',
-  };
 }
 
 /// 统一的题型资格检查和英文答案规范化规则。

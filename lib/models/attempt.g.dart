@@ -165,7 +165,8 @@ Attempt _$AttemptFromJson(Map<String, dynamic> json) => Attempt(
   chosenIndex: (json['chosenIndex'] as num).toInt(),
   correctIndex: (json['correctIndex'] as num).toInt(),
   timestamp: DateTime.parse(json['timestamp'] as String),
-  kind: $enumDecodeNullable(_$AttemptKindEnumMap, json['kind']) ??
+  kind:
+      $enumDecodeNullable(_$AttemptKindEnumMap, json['kind']) ??
       AttemptKind.initial,
   highestHintLevel: (json['highestHintLevel'] as num?)?.toInt() ?? 0,
 );

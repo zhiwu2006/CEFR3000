@@ -41,6 +41,83 @@ void main() {
   );
 
   group('session revision invariants', () {
+    test(
+      'consolidation streak resets on failure and rejects unspaced success',
+      () {
+        final entries = <Attempt>[];
+        void add(int id, AttemptResult result) => entries.add(
+          attempt(
+            wordId: id,
+            result: result,
+            timestamp: DateTime(
+              2026,
+              1,
+              1,
+            ).add(Duration(seconds: entries.length)),
+          ),
+        );
+        void spacing() {
+          for (final id in [2, 3, 4]) {
+            add(id, AttemptResult.correct);
+          }
+        }
+
+        SessionData snapshot() => SessionData.initial(
+          initialQueue: [word(1)],
+          config: config,
+          sessionId: 'streak',
+          initialAttempts: entries,
+        );
+        add(1, AttemptResult.wrong);
+        spacing();
+        add(1, AttemptResult.correct);
+        expect(snapshot().correctionStreak(1), 1);
+        spacing();
+        add(1, AttemptResult.wrong);
+        expect(snapshot().correctionStreak(1), 0);
+        spacing();
+        add(1, AttemptResult.correct);
+        spacing();
+        add(1, AttemptResult.correct);
+        expect(snapshot().correctedWordIds, {1});
+        add(1, AttemptResult.correct);
+        expect(snapshot().correctionStreak(1), 0);
+      },
+    );
+
+    test(
+      'old JSON defaults pending words and newer completion clears backlog',
+      () {
+        final old =
+            TestRun.create(
+              id: 'old',
+              size: 1,
+              levels: {'A1'},
+              timeLimitMs: 2000,
+              orderPolicy: 'random',
+              onlyLeeches: false,
+            ).finish().copyWith(
+              startedAt: DateTime(2026, 1, 1),
+              unresolvedWordIds: [1],
+            );
+        final json = old.toJson()..remove('unresolvedWordIds');
+        expect(TestRun.fromJson(json).unresolvedWordIds, isEmpty);
+        final newer = old.copyWith(
+          id: 'new',
+          startedAt: DateTime(2026, 1, 2),
+          unresolvedWordIds: [],
+          attempts: [
+            attempt(
+              wordId: 1,
+              result: AttemptResult.correct,
+              timestamp: DateTime(2026, 1, 2),
+            ),
+          ],
+        );
+        expect(TestRun.pendingConsolidation([old]), {1});
+        expect(TestRun.pendingConsolidation([old, newer]), isEmpty);
+      },
+    );
     test('delayed replay uses an absolute eligible question number', () {
       const manager = DelayedReplayManager();
       final failed = attempt(
@@ -112,11 +189,7 @@ void main() {
         config: config,
         sessionId: 'session',
         initialAttempts: [
-          attempt(
-            wordId: 1,
-            result: AttemptResult.wrong,
-            timestamp: firstTime,
-          ),
+          attempt(wordId: 1, result: AttemptResult.wrong, timestamp: firstTime),
           attempt(
             wordId: 1,
             result: AttemptResult.correct,
@@ -129,35 +202,35 @@ void main() {
       expect(session.firstAttempts, hasLength(1));
       expect(session.firstAccuracy, 0.0);
       expect(session.firstWrongWordIds, {1});
-      expect(session.correctedWordIds, {1});
-      expect(session.correctionSuccessRate, 1.0);
+      // 一次立即答对不代表已完成间隔巩固，首答指标仍保持不变。
+      expect(session.correctedWordIds, isEmpty);
+      expect(session.correctionSuccessRate, 0.0);
     });
 
-    test('in-session retry does not add a second lapse or long-term review', () {
-      final start = DateTime(2026, 1, 1, 9);
-      final state = CardState.newCard(1, now: start);
-      final updated = SrsAlgorithm.batchUpdateCardStates(
-        {1: state},
-        [
-          attempt(
-            wordId: 1,
-            result: AttemptResult.wrong,
-            timestamp: start,
-          ),
-          attempt(
-            wordId: 1,
-            result: AttemptResult.correct,
-            timestamp: start.add(const Duration(minutes: 1)),
-            kind: AttemptKind.inSessionRetry,
-          ),
-        ],
-        2000,
-      )[1]!;
+    test(
+      'in-session retry does not add a second lapse or long-term review',
+      () {
+        final start = DateTime(2026, 1, 1, 9);
+        final state = CardState.newCard(1, now: start);
+        final updated = SrsAlgorithm.batchUpdateCardStates(
+          {1: state},
+          [
+            attempt(wordId: 1, result: AttemptResult.wrong, timestamp: start),
+            attempt(
+              wordId: 1,
+              result: AttemptResult.correct,
+              timestamp: start.add(const Duration(minutes: 1)),
+              kind: AttemptKind.inSessionRetry,
+            ),
+          ],
+          2000,
+        )[1]!;
 
-      expect(updated.lapses, 1);
-      expect(updated.longTermReviews, 0);
-      expect(updated.isMastered, isFalse);
-    });
+        expect(updated.lapses, 1);
+        expect(updated.longTermReviews, 0);
+        expect(updated.isMastered, isFalse);
+      },
+    );
 
     test('assisted and slow responses remain distinct from fast recall', () {
       expect(

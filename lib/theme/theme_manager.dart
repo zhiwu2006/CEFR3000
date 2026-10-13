@@ -528,57 +528,6 @@ class ThemeManager {
     );
   }
 
-  /// 获取统计卡片装饰
-  static BoxDecoration getStatCardDecoration(ThemeStyle style, Color color) {
-    final borderRadius = getBorderRadius(style);
-    final borderWidth = getBorderWidth(style);
-
-    if (style == ThemeStyle.bauhaus) {
-      return BoxDecoration(
-        color: BauhausTheme.surface,
-        border: Border.all(color: BauhausTheme.foreground, width: borderWidth),
-        boxShadow: BauhausTheme.hardShadowSmall,
-      );
-    }
-
-    if (style == ThemeStyle.cyberpunk) {
-      return BoxDecoration(
-        color: color.withValues(alpha: 0.1),
-        borderRadius: BorderRadius.circular(borderRadius),
-        border: Border.all(color: color.withValues(alpha: 0.3), width: 1),
-      );
-    }
-
-    if (style == ThemeStyle.fono) {
-      return BoxDecoration(
-        color: FonoTheme.surface,
-        borderRadius: BorderRadius.circular(FonoTheme.cardRadius),
-        border: Border.all(
-          color: FonoTheme.border,
-          width: FonoTheme.borderWidth,
-        ),
-      );
-    }
-
-    if (style == ThemeStyle.digitalism) {
-      return BoxDecoration(
-        color: DigitalismTheme.surface,
-        borderRadius: BorderRadius.circular(DigitalismTheme.cardRadius),
-        border: Border.all(
-          color: DigitalismTheme.border,
-          width: DigitalismTheme.borderWidth,
-        ),
-        boxShadow: DigitalismTheme.hardShadow,
-      );
-    }
-
-    return BoxDecoration(
-      color: color.withValues(alpha: 0.1),
-      borderRadius: BorderRadius.circular(borderRadius * 0.8),
-      border: Border.all(color: color.withValues(alpha: 0.2), width: 1),
-    );
-  }
-
   /// 获取进度条背景色
   static Color getProgressBackgroundColor(ThemeStyle style) {
     switch (style) {

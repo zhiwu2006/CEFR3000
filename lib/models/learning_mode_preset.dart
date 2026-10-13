@@ -31,7 +31,7 @@ class LearningModePreset {
       icon: '😊',
       wordsPerSession: 100,
       newCardRatio: 0.25,
-      dailyNewLimit: 30,
+      dailyNewLimit: 100,
       timeLimitMs: 2000,
     ),
     LearningMode.balanced: LearningModePreset(
@@ -41,7 +41,7 @@ class LearningModePreset {
       icon: '⚖️',
       wordsPerSession: 100,
       newCardRatio: 0.15,
-      dailyNewLimit: 50,
+      dailyNewLimit: 100,
       timeLimitMs: 2000,
     ),
     LearningMode.review: LearningModePreset(
@@ -49,9 +49,9 @@ class LearningModePreset {
       name: '复习模式',
       description: '重点复习已学单词，每天约12个新词，适合复习压力大的阶段',
       icon: '📚',
-      wordsPerSession: 120,
+      wordsPerSession: 100,
       newCardRatio: 0.10,
-      dailyNewLimit: 30,
+      dailyNewLimit: 100,
       timeLimitMs: 2000,
     ),
     LearningMode.fast: LearningModePreset(
@@ -61,7 +61,7 @@ class LearningModePreset {
       icon: '⚡',
       wordsPerSession: 150,
       newCardRatio: 0.30,
-      dailyNewLimit: 50,
+      dailyNewLimit: 150,
       timeLimitMs: 1500,
     ),
   };
@@ -73,7 +73,4 @@ class LearningModePreset {
 
   /// 获取新词数量（每天）
   int get dailyNewWords => (wordsPerSession * newCardRatio).round();
-
-  /// 获取复习词数量（每天）
-  int get dailyReviewWords => wordsPerSession - dailyNewWords;
 }

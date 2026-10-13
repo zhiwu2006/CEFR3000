@@ -36,34 +36,6 @@ class ResponsiveLayout {
     return getDeviceType(context) == DeviceType.desktop;
   }
 
-  /// 是否为平板或桌面（大屏设备）
-  static bool isLargeScreen(BuildContext context) {
-    final deviceType = getDeviceType(context);
-    return deviceType == DeviceType.tablet || deviceType == DeviceType.desktop;
-  }
-
-  /// 获取屏幕尺寸类别
-  static ScreenSize getScreenSize(BuildContext context) {
-    final size = MediaQuery.of(context).size;
-    final width = size.width;
-    final height = size.height;
-
-    // 判断是否为横屏
-    final isLandscape = width > height;
-
-    if (width <= mobileMaxWidth) {
-      return isLandscape
-          ? ScreenSize.mobileLandscape
-          : ScreenSize.mobilePortrait;
-    } else if (width <= tabletMaxWidth) {
-      return isLandscape
-          ? ScreenSize.tabletLandscape
-          : ScreenSize.tabletPortrait;
-    } else {
-      return ScreenSize.desktop;
-    }
-  }
-
   /// 获取适应屏幕尺寸的间距
   static double getSpacing(
     BuildContext context, {
@@ -81,24 +53,6 @@ class ResponsiveLayout {
     }
   }
 
-  /// 获取适应屏幕尺寸的字体大小
-  static double getFontSize(
-    BuildContext context, {
-    required double baseFontSize,
-    double mobileScale = 1.0,
-    double tabletScale = 1.2,
-    double desktopScale = 1.4,
-  }) {
-    switch (getDeviceType(context)) {
-      case DeviceType.mobile:
-        return baseFontSize * mobileScale;
-      case DeviceType.tablet:
-        return baseFontSize * tabletScale;
-      case DeviceType.desktop:
-        return baseFontSize * desktopScale;
-    }
-  }
-
   /// 获取内容区域最大宽度
   static double getContentMaxWidth(BuildContext context) {
     switch (getDeviceType(context)) {
@@ -109,36 +63,6 @@ class ResponsiveLayout {
       case DeviceType.desktop:
         return 1000; // 桌面内容区域最大宽度
     }
-  }
-
-  /// 获取列数（用于网格布局）
-  static int getColumnCount(
-    BuildContext context, {
-    int mobileColumns = 1,
-    int tabletColumns = 2,
-    int desktopColumns = 3,
-  }) {
-    switch (getDeviceType(context)) {
-      case DeviceType.mobile:
-        return mobileColumns;
-      case DeviceType.tablet:
-        return tabletColumns;
-      case DeviceType.desktop:
-        return desktopColumns;
-    }
-  }
-
-  /// 获取侧边栏宽度
-  static double getSidebarWidth(BuildContext context) {
-    if (isLargeScreen(context)) {
-      return 300;
-    }
-    return 0;
-  }
-
-  /// 是否应该显示侧边栏
-  static bool shouldShowSidebar(BuildContext context) {
-    return isLargeScreen(context);
   }
 
   /// 获取卡片边距
@@ -230,15 +154,6 @@ class ResponsiveLayout {
 
 /// 设备类型枚举
 enum DeviceType { mobile, tablet, desktop }
-
-/// 屏幕尺寸枚举
-enum ScreenSize {
-  mobilePortrait,
-  mobileLandscape,
-  tabletPortrait,
-  tabletLandscape,
-  desktop,
-}
 
 /// 响应式组件基类
 abstract class ResponsiveWidget extends StatelessWidget {

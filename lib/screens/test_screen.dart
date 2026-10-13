@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../session/base_providers.dart';
@@ -28,6 +30,9 @@ class _TestScreenState extends ConsumerState<TestScreen>
     with WidgetsBindingObserver {
   SessionController? _sessionController;
   bool _navigatedToSummary = false;
+  bool _resumeWhenForeground = false;
+  bool _leavingTestPage = false;
+  Timer? _resumeDelayTimer;
 
   @override
   void initState() {
@@ -43,7 +48,18 @@ class _TestScreenState extends ConsumerState<TestScreen>
   Future<void> _startSessionFromCheckpoint() async {
     if (!mounted) return;
     _sessionController = ref.read(sessionControllerProvider.notifier);
-    final settings = ref.read(appSettingsProvider);
+    final activeSession = ref.read(sessionControllerProvider);
+    if (activeSession.sessionId.isNotEmpty &&
+        (activeSession.state == SessionState.waiting ||
+            activeSession.state == SessionState.resolved ||
+            activeSession.state == SessionState.saveFailed)) {
+      // 从首页返回时保留原题目、答题记录和暂停状态，不能重新选词覆盖它们。
+      // 返回手势在部分 Android 版本会额外发送 resumed 回调，因此这里
+      // 强制重新暂停，保证恢复页至少展示两秒暂停状态。
+      _sessionController?.pauseSession();
+      _resumeAfterBriefPause();
+      return;
+    }
     final store = await ref.read(sessionCheckpointStoreProvider.future);
     if (!mounted) return;
     final checkpoint = store.load();
@@ -51,15 +67,17 @@ class _TestScreenState extends ConsumerState<TestScreen>
         SessionConfig.fromCheckpointMap(checkpoint?.config ?? {}) ??
         widget.config;
 
-    if (settings.hasActiveSession) {
+    // 恢复判据以「检查点」为准，而不是 settings.hasActiveSession。
+    // hasActiveSession 依赖 currentSessionId，而该字段只由
+    // stageCustomSession 写入 —— 首页「开始学习」发起的会话从不写它，
+    // 会导致进程被杀后重启时已保存的检查点被读取后丢弃、整轮从零开始。
+    if (checkpoint != null && checkpoint.isResumable) {
       await _sessionController?.startSession(
         sessionConfig,
-        resumeSessionId: settings.currentSessionId,
-        remainingWordIds: settings.remainingWordIds,
-        currentProgress: settings.currentProgress,
-        checkpoint: checkpoint?.sessionId == settings.currentSessionId
-            ? checkpoint
-            : null,
+        resumeSessionId: checkpoint.sessionId,
+        remainingWordIds: checkpoint.mainQueueWordIds,
+        currentProgress: checkpoint.currentProgress,
+        checkpoint: checkpoint,
       );
     } else {
       await _sessionController?.startSession(widget.config);
@@ -68,10 +86,10 @@ class _TestScreenState extends ConsumerState<TestScreen>
 
   @override
   void dispose() {
-    final sessionController = _sessionController;
-    if (sessionController != null) {
-      Future.microtask(sessionController.stopSession);
-    }
+    // 离开测试页只是暂停；整轮完成前不保存学习记录，也不丢弃会话。
+    _resumeWhenForeground = false;
+    _resumeDelayTimer?.cancel();
+    _sessionController?.pauseSession();
     WidgetsBinding.instance.removeObserver(this);
     super.dispose();
   }
@@ -82,6 +100,7 @@ class _TestScreenState extends ConsumerState<TestScreen>
 
     final sessionController = _sessionController;
     if (sessionController == null) return;
+    if (_leavingTestPage) return;
 
     // 生命周期事件只暂停/恢复内存中的计时器，不等待存储。
     // inactive / hidden / paused 可连续触发，控制器中的暂停是幂等的。
@@ -90,21 +109,38 @@ class _TestScreenState extends ConsumerState<TestScreen>
       case AppLifecycleState.inactive:
       case AppLifecycleState.hidden:
       case AppLifecycleState.detached:
+        _resumeDelayTimer?.cancel();
+        _resumeWhenForeground = true;
         sessionController.pauseSession();
         break;
       case AppLifecycleState.resumed:
-        sessionController.resumeSession();
+        if (_resumeWhenForeground) {
+          _resumeWhenForeground = false;
+          _resumeAfterBriefPause();
+        }
         break;
     }
+  }
+
+  /// 返回测试页时先保持暂停遮罩两秒，让用户确认已回到原题后再继续。
+  void _resumeAfterBriefPause() {
+    _resumeDelayTimer?.cancel();
+    _resumeDelayTimer = Timer(const Duration(seconds: 2), () {
+      if (mounted) _sessionController?.resumeSession();
+    });
   }
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    // 精细化响应式：仅监听生命周期与题目有无，阻断倒计时高频重绘外层整树
+    // 精细化响应式：监听生命周期与题目状态，阻断倒计时高频重绘外层整树
     ref.watch(
       sessionControllerProvider.select(
-        (s) => (state: s.state, hasQuestion: s.currentQuestion != null),
+        (s) => (
+          state: s.state,
+          hasQuestion: s.currentQuestion != null,
+          questionId: s.currentQuestion?.word.id,
+        ),
       ),
     );
     final sessionData = ref.read(sessionControllerProvider);
@@ -166,7 +202,10 @@ class _TestScreenState extends ConsumerState<TestScreen>
     if (ref.read(sessionControllerProvider).state == SessionState.saving) {
       return false;
     }
-    controller.stopSession();
+    _leavingTestPage = true;
+    _resumeWhenForeground = false;
+    _resumeDelayTimer?.cancel();
+    controller.pauseSession();
     return true;
   }
 
@@ -352,19 +391,33 @@ class _TestScreenState extends ConsumerState<TestScreen>
                               borderRadius > 6 ? 6 : borderRadius,
                             ),
                           ),
-                          child: Text(
-                            '${data.attempts.length + 1} / ${data.config.wordsPerSession}',
-                            style: TextStyle(
-                              color: headerTextColor,
-                              fontSize: 12,
-                              fontWeight: FontWeight.w700,
-                              fontFamily:
-                                  themeStyle == ThemeStyle.digitalism ||
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                data.testProgressLabel,
+                                style: TextStyle(
+                                  color: headerTextColor,
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w700,
+                                  fontFamily:
+                                      themeStyle == ThemeStyle.digitalism ||
                                           themeStyle == ThemeStyle.fono
                                       ? 'monospace'
                                       : null,
-                              letterSpacing: -0.2,
-                            ),
+                                  letterSpacing: -0.2,
+                                ),
+                              ),
+                              if (data.testGroupLabel.isNotEmpty)
+                                Text(
+                                  data.testGroupLabel,
+                                  style: TextStyle(
+                                    color: headerTextColor,
+                                    fontSize: 11,
+                                  ),
+                                ),
+                            ],
                           ),
                         ),
                         const SizedBox(width: 10),
@@ -379,11 +432,7 @@ class _TestScreenState extends ConsumerState<TestScreen>
                             child: ClipRRect(
                               borderRadius: BorderRadius.circular(2),
                               child: LinearProgressIndicator(
-                                value: data.config.wordsPerSession > 0
-                                    ? (data.attempts.length /
-                                            data.config.wordsPerSession)
-                                        .clamp(0.0, 1.0)
-                                    : 0.0,
+                                value: data.testedProgressRatio,
                                 backgroundColor: Colors.transparent,
                                 valueColor: AlwaysStoppedAnimation<Color>(
                                   headerTextColor,
@@ -423,8 +472,7 @@ class _TestScreenState extends ConsumerState<TestScreen>
                         const SizedBox(width: 6),
                         // 重置按钮
                         GestureDetector(
-                          onTap: () =>
-                              _showResetConfirmDialog(context, ref),
+                          onTap: () => _showResetConfirmDialog(context, ref),
                           child: Container(
                             padding: const EdgeInsets.all(5),
                             decoration: BoxDecoration(
@@ -455,16 +503,22 @@ class _TestScreenState extends ConsumerState<TestScreen>
                           builder: (context, constraints) {
                             final availableHeight = constraints.maxHeight;
                             // 预估基础高度：单词区(~145) + 倒计时(~60) + 选项区(~236) ≈ 441
-                            final remaining =
-                                (availableHeight - 441).clamp(0.0, 1000.0);
+                            final remaining = (availableHeight - 441).clamp(
+                              0.0,
+                              1000.0,
+                            );
                             // 核心间距：单词与倒计时、倒计时与选项严格均等，控制在 20~40dp 黄金区间，绝不过大
-                            final double contentGap =
-                                (remaining * 0.20).clamp(18.0, 38.0);
+                            final double contentGap = (remaining * 0.20).clamp(
+                              18.0,
+                              38.0,
+                            );
                             // 顶部与底部留白自适应分配剩余空间，保证单词在视觉上方、选项在大拇指黄金区
-                            final double topSpacing =
-                                (remaining * 0.16).clamp(12.0, 30.0);
-                            final double bottomSpacing =
-                                (remaining * 0.32).clamp(16.0, 56.0);
+                            final double topSpacing = (remaining * 0.16).clamp(
+                              12.0,
+                              30.0,
+                            );
+                            final double bottomSpacing = (remaining * 0.32)
+                                .clamp(16.0, 56.0);
 
                             return SingleChildScrollView(
                               physics: const ClampingScrollPhysics(),
@@ -1070,24 +1124,24 @@ class _TestScreenState extends ConsumerState<TestScreen>
       decoration: cardDecoration,
       child: Column(
         children: [
-          Text(
-            '进度',
-            style: theme.textTheme.titleMedium?.copyWith(
-              fontWeight: FontWeight.bold,
-              color: textColor,
+          if (sessionData.testGroupLabel.isNotEmpty) ...[
+            Text(
+              sessionData.testGroupLabel,
+              style: theme.textTheme.titleMedium?.copyWith(
+                fontWeight: FontWeight.bold,
+                color: textColor,
+              ),
             ),
-          ),
-          const SizedBox(height: 8),
+            const SizedBox(height: 8),
+          ],
           LinearProgressIndicator(
-            value:
-                sessionData.attempts.length /
-                sessionData.config.wordsPerSession,
+            value: sessionData.testedProgressRatio,
             backgroundColor: progressBgColor,
             valueColor: AlwaysStoppedAnimation<Color>(progressColor),
           ),
           const SizedBox(height: 8),
           Text(
-            '${sessionData.attempts.length + 1} / ${sessionData.config.wordsPerSession}',
+            sessionData.testProgressLabel,
             style: theme.textTheme.bodyLarge?.copyWith(
               fontWeight: FontWeight.w500,
               color: textColor,
@@ -1112,14 +1166,8 @@ class _TestScreenState extends ConsumerState<TestScreen>
         (index) => OptionButton(
           text: question.options[index],
           label: ['A', 'B', 'C', 'D'][index],
-          padding: const EdgeInsets.symmetric(
-            horizontal: 14,
-            vertical: 11,
-          ),
-          margin: const EdgeInsets.symmetric(
-            horizontal: 2,
-            vertical: 4,
-          ),
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
+          margin: const EdgeInsets.symmetric(horizontal: 2, vertical: 4),
           isSelected: sessionData.selectedOption == index,
           isCorrect:
               sessionData.state == SessionState.resolved &&

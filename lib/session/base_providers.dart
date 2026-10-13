@@ -1,4 +1,6 @@
 import 'dart:io';
+import 'dart:async';
+import 'dart:math';
 
 import 'package:flutter/foundation.dart';
 
@@ -18,6 +20,7 @@ import 'session_controller.dart';
 import 'session_models.dart';
 import 'app_settings_notifier.dart';
 import '../services/daily_history_service.dart';
+import '../features/study/domain/session_checkpoint.dart';
 import '../features/study/data/session_checkpoint_store.dart';
 import '../features/study/application/study_plan_service.dart';
 
@@ -149,8 +152,6 @@ final sessionControllerProvider =
       final ttsService = ref.watch(ttsServiceProvider);
       final distractorService = ref.watch(distractorServiceProvider);
       final settingsNotifier = ref.watch(appSettingsProvider.notifier);
-      final checkpointStore =
-          ref.watch(sessionCheckpointStoreProvider).asData?.value;
 
       return SessionController(
         wordRepository: wordRepo,
@@ -160,7 +161,8 @@ final sessionControllerProvider =
         getDailyNewRemaining: settingsNotifier.getDailyNewRemaining,
         consumeDailyNew: settingsNotifier.consumeDailyNew,
         consumeNewOnSelection: false,
-        checkpointStore: checkpointStore,
+        checkpointStoreGetter: () =>
+            ref.read(sessionCheckpointStoreProvider).asData?.value,
       );
     });
 
@@ -268,6 +270,29 @@ final learningStatsProvider = FutureProvider.autoDispose<Map<String, dynamic>>((
   final settings = ref.watch(appSettingsProvider);
   final progressRepo = ref.read(progressRepositoryProvider);
 
+  // 「当前会话」以检查点为准，而不是 settings.hasActiveSession。
+  // 后者依赖 currentSessionId，而该字段只由 stageCustomSession 写入：首页
+  // 「开始学习」从不写它，会漏报主路径的会话；其进度更新入口
+  // （updateTestProgress）也零调用，因此对自定义会话恒显示 0 进度。
+  // 检查点才是「是否存在未完成会话」的唯一真实来源（与 4.1 的恢复判据同源）。
+  // 检查点存储初始化失败（SharedPreferences 不可用等）不应让整个统计页报错。
+  // 该 await 原先落在下方 try 之外，异常会直接冒泡成 AsyncError，连
+  // 「其余统计照常展示」的降级分支都走不到；这里显式降级为「没有进行中的会话」。
+  SessionCheckpoint? activeCheckpoint;
+  try {
+    final checkpoint = (await ref.watch(
+      sessionCheckpointStoreProvider.future,
+    )).load();
+    activeCheckpoint = (checkpoint != null && checkpoint.isResumable)
+        ? checkpoint
+        : null;
+  } catch (e) {
+    debugPrint('Error loading session checkpoint: $e');
+    activeCheckpoint = null;
+  }
+  final currentSessionProgress = activeCheckpoint?.currentProgress ?? 0;
+  final currentSessionTotal = activeCheckpoint?.totalQuestionCount ?? 0;
+
   try {
     // 从数据库获取学习统计
     final dbStats = await progressRepo.getLearningStats(
@@ -309,13 +334,9 @@ final learningStatsProvider = FutureProvider.autoDispose<Map<String, dynamic>>((
       'averageAccuracy': dbStats['avgAccuracy'] ?? 0.0,
       'todayTests': todayTests,
       'todayAccuracy': todayAccuracy, // 今日最后一次测试的准确率
-      'currentSessionProgress': settings.hasActiveSession
-          ? settings.currentProgress
-          : 0,
-      'currentSessionTotal': settings.hasActiveSession
-          ? settings.totalWords
-          : 0,
-      'hasActiveSession': settings.hasActiveSession,
+      'currentSessionProgress': currentSessionProgress,
+      'currentSessionTotal': currentSessionTotal,
+      'hasActiveSession': activeCheckpoint != null,
       'totalCards': dbStats['totalCards'] ?? 0,
       'dueCards': dbStats['dueCards'] ?? 0,
       'leechCards': dbStats['leechCards'] ?? 0,
@@ -357,13 +378,9 @@ final learningStatsProvider = FutureProvider.autoDispose<Map<String, dynamic>>((
       'totalTests': 0,
       'averageAccuracy': 0.0,
       'todayTests': 0,
-      'currentSessionProgress': settings.hasActiveSession
-          ? settings.currentProgress
-          : 0,
-      'currentSessionTotal': settings.hasActiveSession
-          ? settings.totalWords
-          : 0,
-      'hasActiveSession': settings.hasActiveSession,
+      'currentSessionProgress': currentSessionProgress,
+      'currentSessionTotal': currentSessionTotal,
+      'hasActiveSession': activeCheckpoint != null,
       'totalCards': 0,
       'dueCards': 0,
       'leechCards': 0,
@@ -379,6 +396,32 @@ final learningStatsProvider = FutureProvider.autoDispose<Map<String, dynamic>>((
 final testRunHistoryProvider = FutureProvider<List<TestRun>>((ref) async {
   final repo = ref.read(progressRepositoryProvider);
   return await repo.getTestRunHistory();
+});
+
+Future<void> _measureStartup(
+  String stage,
+  Future<void> Function() action,
+) async {
+  final watch = Stopwatch()..start();
+  try {
+    await action();
+  } finally {
+    debugPrint('Startup $stage: ${watch.elapsedMilliseconds}ms');
+  }
+}
+
+/// 语音预热只执行一次，首次发音也复用服务内部的同一个初始化 Future。
+final ttsWarmupProvider = FutureProvider<void>((ref) async {
+  try {
+    await _measureStartup('tts', () => _initTtsService(ref));
+  } catch (error) {
+    debugPrint('TTS initialization failed (non-critical): $error');
+  }
+});
+
+final initializationProvider = FutureProvider<void>((ref) async {
+  await ref.watch(coreInitializationProvider.future);
+  unawaited(ref.read(ttsWarmupProvider.future));
 });
 
 Future<void> _initHive() async {
@@ -401,19 +444,23 @@ Future<void> _initProgressRepository(Ref ref) async {
     await progressRepo.init();
   } else if (progressRepo is SqliteProgressRepository) {
     await progressRepo.init();
-    // The legacy Hive store remains read-only and is used only as a source
-    // for the one-way, checksum-tracked migration into SQLite.
-    final legacy = HiveProgressRepository(ref.read(wordRepositoryProvider));
-    await legacy.init();
+    // The legacy Hive store remains read-only and is only opened when a
+    // migration can actually run; a settled SQLite core skips seven boxes.
     if (!await progressRepo.hasCoreData()) {
-      final report = await LegacyProgressMigrator().migrate(
-        source: legacy,
-        target: progressRepo,
-      );
-      debugPrint(
-        'Legacy progress migration: ${report.status}, '
-        'cards=${report.cardStates}, events=${report.reviewEvents}',
-      );
+      final legacy = HiveProgressRepository(ref.read(wordRepositoryProvider));
+      await legacy.init();
+      try {
+        final report = await LegacyProgressMigrator().migrate(
+          source: legacy,
+          target: progressRepo,
+        );
+        debugPrint(
+          'Legacy progress migration: ${report.status}, '
+          'cards=${report.cardStates}, events=${report.reviewEvents}',
+        );
+      } finally {
+        await legacy.dispose();
+      }
     }
     await progressRepo.indexLegacyLexicon(
       await ref.read(wordRepositoryProvider).loadAll(),
@@ -429,13 +476,13 @@ Future<void> _initTtsService(Ref ref) async {
   debugPrint('TTS initialized successfully');
 }
 
-/// 初始化所有数据服务
-final initializationProvider = FutureProvider<void>((ref) async {
+/// 首页必需的数据；语音服务不属于就绪门槛。
+final coreInitializationProvider = FutureProvider<void>((ref) async {
   try {
     debugPrint('=== Starting initialization ===');
 
     try {
-      await _initHive();
+      await _measureStartup('_initHive', () => _initHive());
     } catch (e, stackTrace) {
       debugPrint('Hive initialization failed: $e');
       debugPrint('Stack trace: $stackTrace');
@@ -443,7 +490,10 @@ final initializationProvider = FutureProvider<void>((ref) async {
     }
 
     try {
-      await _initWordRepository(ref);
+      await _measureStartup(
+        '_initWordRepository',
+        () => _initWordRepository(ref),
+      );
     } catch (e, stackTrace) {
       debugPrint('WordRepository initialization failed: $e');
       debugPrint('Stack trace: $stackTrace');
@@ -451,17 +501,14 @@ final initializationProvider = FutureProvider<void>((ref) async {
     }
 
     try {
-      await _initProgressRepository(ref);
+      await _measureStartup(
+        '_initProgressRepository',
+        () => _initProgressRepository(ref),
+      );
     } catch (e, stackTrace) {
       debugPrint('ProgressRepository initialization failed: $e');
       debugPrint('Stack trace: $stackTrace');
       rethrow;
-    }
-
-    try {
-      await _initTtsService(ref);
-    } catch (e) {
-      debugPrint('TTS initialization failed (non-critical): $e');
     }
 
     debugPrint('=== Initialization completed ===');
@@ -524,47 +571,57 @@ final todayStudyPlanProvider = FutureProvider.autoDispose<StudyPlan>((
 
 /// 传统四选一闪测的兼容计划。它继续使用识别 CardState，但与主动
 /// 回忆计划分开，避免一次答题推进了错误能力的状态。
-final todayRecognitionPlanProvider =
-    FutureProvider.autoDispose<StudyPlan>((ref) async {
-      await ref.watch(initializationProvider.future);
-      final settings = ref.watch(appSettingsProvider);
-      final policy = LeechPolicy(
-        lapsesThreshold: settings.leechLapsesThreshold,
-        includeMarked: settings.leechIncludeMarked,
+final todayRecognitionPlanProvider = FutureProvider.autoDispose<StudyPlan>((
+  ref,
+) async {
+  await ref.watch(initializationProvider.future);
+  final settings = ref.watch(appSettingsProvider);
+  final policy = LeechPolicy(
+    lapsesThreshold: settings.leechLapsesThreshold,
+    includeMarked: settings.leechIncludeMarked,
+  );
+  final targetWords = settings.wordsPerSession;
+  // 闪测单题估时仅 3~4 秒（见 StudyPlanService），100 题约 7 分钟；
+  // 这里留出 30 分钟下限，保证时间预算不会截断用户设定的词数。
+  final budgetMinutes = max(30, (targetWords * 4 / 60).ceil());
+  return ref
+      .watch(studyPlanServiceProvider)
+      .buildTodayPlan(
+        levels: settings.selectedLevelsSet,
+        maxItems: targetWords,
+        maxMinutes: budgetMinutes,
+        dailyNewLimit: settings.dailyNewLimit,
+        dailyNewUsed: settings.dailyNewUsed,
+        leechPolicy: policy,
+        onlyLeeches: settings.onlyLeeches,
+        skill: LearningSkill.meaningRecognition,
       );
-      return ref.watch(studyPlanServiceProvider).buildTodayPlan(
-            levels: settings.selectedLevelsSet,
-            maxItems: settings.wordsPerSession,
-            maxMinutes: 10,
-            dailyNewLimit: settings.dailyNewLimit,
-            dailyNewUsed: settings.dailyNewUsed,
-            leechPolicy: policy,
-            onlyLeeches: settings.onlyLeeches,
-            skill: LearningSkill.meaningRecognition,
-          );
-    });
+});
 
 /// 英文产出使用独立 LearningItem 状态的计划。它不会把识别卡的到期日
 /// 或复习次数当作产出能力已经掌握；旧词库内容仅在用户主动进入时以
 /// legacy-fallback 资格加入。
-final todayProductionPlanProvider =
-    FutureProvider.autoDispose<StudyPlan>((ref) async {
-      await ref.watch(initializationProvider.future);
-      final settings = ref.watch(appSettingsProvider);
-      return ref.watch(studyPlanServiceProvider).buildTodayPlan(
-            levels: settings.selectedLevelsSet,
-            maxItems: settings.wordsPerSession,
-            maxMinutes: 10,
-            dailyNewLimit: settings.dailyNewLimit,
-            dailyNewUsed: settings.dailyNewUsed,
-            leechPolicy: LeechPolicy(
-              lapsesThreshold: settings.leechLapsesThreshold,
-              includeMarked: settings.leechIncludeMarked,
-            ),
-            skill: LearningSkill.englishProduction,
-            allowLegacyFallback: true,
-          );
-    });
+final todayProductionPlanProvider = FutureProvider.autoDispose<StudyPlan>((
+  ref,
+) async {
+  await ref.watch(initializationProvider.future);
+  final settings = ref.watch(appSettingsProvider);
+  return ref
+      .watch(studyPlanServiceProvider)
+      .buildTodayPlan(
+        levels: settings.selectedLevelsSet,
+        maxItems: settings.wordsPerSession,
+        maxMinutes: 10,
+        dailyNewLimit: settings.dailyNewLimit,
+        dailyNewUsed: settings.dailyNewUsed,
+        leechPolicy: LeechPolicy(
+          lapsesThreshold: settings.leechLapsesThreshold,
+          includeMarked: settings.leechIncludeMarked,
+        ),
+        skill: LearningSkill.englishProduction,
+        allowLegacyFallback: true,
+      );
+});
 
 /// 会话暂停状态 provider
 final sessionPausedProvider = StateProvider<bool>((ref) => false);

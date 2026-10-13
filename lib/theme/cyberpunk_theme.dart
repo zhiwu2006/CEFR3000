@@ -70,67 +70,6 @@ class CyberpunkTheme {
     ),
   ];
 
-  /// 中型霓虹发光
-  static List<BoxShadow> get neonGlowMedium => [
-    BoxShadow(
-      color: neonGreen.withValues(alpha: 0.6),
-      blurRadius: 5,
-      spreadRadius: 0,
-    ),
-    BoxShadow(
-      color: neonGreen.withValues(alpha: 0.4),
-      blurRadius: 10,
-      spreadRadius: 0,
-    ),
-  ];
-
-  /// 大型霓虹发光
-  static List<BoxShadow> get neonGlowLarge => [
-    BoxShadow(
-      color: neonGreen.withValues(alpha: 0.6),
-      blurRadius: 10,
-      spreadRadius: 0,
-    ),
-    BoxShadow(
-      color: neonGreen.withValues(alpha: 0.4),
-      blurRadius: 20,
-      spreadRadius: 0,
-    ),
-    BoxShadow(
-      color: neonGreen.withValues(alpha: 0.2),
-      blurRadius: 40,
-      spreadRadius: 0,
-    ),
-  ];
-
-  /// 品红霓虹发光
-  static List<BoxShadow> get neonGlowMagenta => [
-    BoxShadow(
-      color: neonMagenta.withValues(alpha: 0.6),
-      blurRadius: 5,
-      spreadRadius: 0,
-    ),
-    BoxShadow(
-      color: neonMagenta.withValues(alpha: 0.4),
-      blurRadius: 15,
-      spreadRadius: 0,
-    ),
-  ];
-
-  /// 青色霓虹发光
-  static List<BoxShadow> get neonGlowCyan => [
-    BoxShadow(
-      color: neonCyan.withValues(alpha: 0.6),
-      blurRadius: 5,
-      spreadRadius: 0,
-    ),
-    BoxShadow(
-      color: neonCyan.withValues(alpha: 0.4),
-      blurRadius: 15,
-      spreadRadius: 0,
-    ),
-  ];
-
   // ============ 主题数据 ============
   static ThemeData getTheme(BuildContext? context) {
     return ThemeData(
@@ -508,27 +447,6 @@ class CyberpunkTheme {
 
   // ============ 辅助方法 ============
 
-  /// 获取霓虹边框装饰
-  static BoxDecoration getNeonBorderDecoration({
-    Color? glowColor,
-    double borderWidth = 1,
-    double borderRadius = 4,
-  }) {
-    final color = glowColor ?? neonGreen;
-    return BoxDecoration(
-      color: card,
-      borderRadius: BorderRadius.circular(borderRadius),
-      border: Border.all(color: color, width: borderWidth),
-      boxShadow: [
-        BoxShadow(
-          color: color.withValues(alpha: 0.4),
-          blurRadius: 8,
-          spreadRadius: 0,
-        ),
-      ],
-    );
-  }
-
   /// 获取卡片装饰（带霓虹发光）
   static BoxDecoration getCardDecoration({bool withGlow = false}) {
     return BoxDecoration(
@@ -536,15 +454,6 @@ class CyberpunkTheme {
       borderRadius: BorderRadius.circular(4),
       border: Border.all(color: border, width: 1),
       boxShadow: withGlow ? neonGlowSmall : null,
-    );
-  }
-
-  /// 获取终端风格装饰
-  static BoxDecoration getTerminalDecoration() {
-    return BoxDecoration(
-      color: background,
-      borderRadius: BorderRadius.circular(4),
-      border: Border.all(color: neonGreen.withValues(alpha: 0.5), width: 1),
     );
   }
 
@@ -562,47 +471,5 @@ class CyberpunkTheme {
       default:
         return mutedForeground;
     }
-  }
-
-  /// 获取霓虹文字阴影（发光效果）
-  static List<Shadow> getNeonTextShadow({Color? color}) {
-    final glowColor = color ?? neonGreen;
-    return [
-      Shadow(color: glowColor.withValues(alpha: 0.8), blurRadius: 4),
-      Shadow(color: glowColor.withValues(alpha: 0.5), blurRadius: 8),
-      Shadow(color: glowColor.withValues(alpha: 0.3), blurRadius: 16),
-    ];
-  }
-
-  /// 获取色差文字阴影（故障效果）
-  static List<Shadow> getGlitchTextShadow() {
-    return [
-      Shadow(
-        color: neonMagenta.withValues(alpha: 0.8),
-        offset: const Offset(-2, 0),
-        blurRadius: 0,
-      ),
-      Shadow(
-        color: neonCyan.withValues(alpha: 0.8),
-        offset: const Offset(2, 0),
-        blurRadius: 0,
-      ),
-    ];
-  }
-
-  /// 扫描线装饰（用于覆盖层）
-  static BoxDecoration getScanlineDecoration() {
-    return BoxDecoration(
-      gradient: LinearGradient(
-        begin: Alignment.topCenter,
-        end: Alignment.bottomCenter,
-        colors: List.generate(100, (index) {
-          return index.isEven
-              ? Colors.transparent
-              : Colors.black.withValues(alpha: 0.05);
-        }),
-        stops: List.generate(100, (index) => index / 100),
-      ),
-    );
   }
 }

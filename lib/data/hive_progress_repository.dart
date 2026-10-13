@@ -921,6 +921,38 @@ class HiveProgressRepository
     await _learningItemStateBox.clear();
   }
 
+  /// 对全部 box 做一次浅拷贝快照，用于导入失败时回滚。
+  Map<String, Map<dynamic, dynamic>> _snapshotBoxes() => {
+    'cardStates': _cardStateBox.toMap(),
+    'testRuns': _testRunBox.toMap(),
+    'attempts': _attemptBox.toMap(),
+    'reviewEvents': _reviewEventBox.toMap(),
+    'exposureEvents': _exposureEventBox.toMap(),
+    'learningItemStates': _learningItemStateBox.toMap(),
+    'wordPreferences': _wordPreferenceBox.toMap(),
+  };
+
+  /// 用快照覆盖全部 box，把状态还原到导入之前。
+  Future<void> _restoreBoxes(
+    Map<String, Map<dynamic, dynamic>> snapshot,
+  ) async {
+    Future<void> restore<T>(Box<T> box, String key) async {
+      await box.clear();
+      final values = snapshot[key];
+      if (values != null && values.isNotEmpty) {
+        await box.putAll(Map<dynamic, T>.from(values));
+      }
+    }
+
+    await restore(_cardStateBox, 'cardStates');
+    await restore(_testRunBox, 'testRuns');
+    await restore(_attemptBox, 'attempts');
+    await restore(_reviewEventBox, 'reviewEvents');
+    await restore(_exposureEventBox, 'exposureEvents');
+    await restore(_learningItemStateBox, 'learningItemStates');
+    await restore(_wordPreferenceBox, 'wordPreferences');
+  }
+
   @override
   Future<Map<String, dynamic>> exportProgress() async {
     return {
@@ -956,8 +988,25 @@ class HiveProgressRepository
         'Warning: import data version $version is newer than supported $_exportVersion',
       );
     }
-    await clearAllProgress();
+    // Hive 没有事务语义：先对全部 box 做内存快照，任何一步失败都整体回滚，
+    // 避免出现「数据已清空、新数据只写入一半」的不可逆结果。
+    final snapshot = _snapshotBoxes();
+    try {
+      await clearAllProgress();
+      await _writeImportedProgress(data);
+    } catch (error) {
+      debugPrint('Progress import failed, rolling back: $error');
+      try {
+        await _restoreBoxes(snapshot);
+      } catch (restoreError) {
+        debugPrint('Progress import rollback failed: $restoreError');
+      }
+      rethrow;
+    }
+  }
 
+  /// 把导出负载写入各 box。失败时由 [importProgress] 负责回滚。
+  Future<void> _writeImportedProgress(Map<String, dynamic> data) async {
     // 导入卡片状态
     if (data['cardStates'] != null) {
       final states = (data['cardStates'] as List)

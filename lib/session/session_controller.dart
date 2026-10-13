@@ -24,6 +24,11 @@ class SessionController extends StateNotifier<SessionData> {
   final WordSelectionService _wordSelectionService;
   final DelayedReplayManager _delayedReplayManager;
   final SessionCheckpointStore? _checkpointStore;
+  final SessionCheckpointStore? Function()? _checkpointStoreGetter;
+
+  SessionCheckpointStore? get checkpointStore =>
+      _checkpointStore ?? _checkpointStoreGetter?.call();
+
   late RecallCommitService _recallCommitService;
   final Set<String> _committedEventIds = <String>{};
   final Set<int> _consumedNewWordIds = <int>{};
@@ -31,7 +36,6 @@ class SessionController extends StateNotifier<SessionData> {
   final Clock _clock;
   final Future<void> Function(int) _consumeDailyNew;
   bool _legacyStatesSaved = false;
-  final Set<int> _pendingDifficultWordIds = <int>{};
   static const feedbackDuration = Duration(milliseconds: 800);
   Timer? _feedbackTimer;
   Duration _feedbackRemaining = Duration.zero;
@@ -44,6 +48,23 @@ class SessionController extends StateNotifier<SessionData> {
   bool _isPaused = false;
   bool _pendingNextQuestion = false;
 
+  /// 每答完多少题落一次检查点。
+  ///
+  /// 检查点原先只在 `pauseSession()`（退到后台）时写入，答题过程中不留任何
+  /// 持久化痕迹：前台崩溃或被系统杀死会丢掉整轮进度，而「resolved 状态恢复
+  /// 分支」只有在 800ms 反馈窗口内恰好暂停时才会走到。这里改为按题数节流落盘，
+  /// 既覆盖了崩溃场景，又避免每题都写一次 SharedPreferences。
+  static const int checkpointSaveEveryQuestions = 5;
+
+  /// 自上次落盘以来已作答的题数，配合 [checkpointSaveEveryQuestions] 做节流。
+  int _questionsSinceCheckpoint = 0;
+
+  /// 检查点写入的串行链。
+  ///
+  /// 节流写入与 `pauseSession()` 的写入必须依次执行：两者都整体覆盖同一份快照，
+  /// 并发执行会让后完成的旧快照盖掉新快照。
+  Future<void> _checkpointWrite = Future<void>.value();
+
   SessionController({
     required WordRepository wordRepository,
     required ProgressRepository progressRepository,
@@ -54,6 +75,7 @@ class SessionController extends StateNotifier<SessionData> {
     bool consumeNewOnSelection = false,
     Clock clock = const SystemClock(),
     SessionCheckpointStore? checkpointStore,
+    SessionCheckpointStore? Function()? checkpointStoreGetter,
   }) : _wordRepository = wordRepository,
        _progressRepository = progressRepository,
        _ttsService = ttsService,
@@ -69,6 +91,7 @@ class SessionController extends StateNotifier<SessionData> {
        _clock = clock,
        _consumeDailyNew = consumeDailyNew,
        _checkpointStore = checkpointStore,
+       _checkpointStoreGetter = checkpointStoreGetter,
        super(
          SessionData.initial(
            initialQueue: [],
@@ -114,7 +137,6 @@ class SessionController extends StateNotifier<SessionData> {
       _cancelFeedback();
       _committedEventIds.clear();
       _consumedNewWordIds.clear();
-      _pendingDifficultWordIds.clear();
       _legacyStatesSaved = false;
       debugPrint('=== Starting session with config: $config');
       _recallCommitService = RecallCommitService(
@@ -123,10 +145,21 @@ class SessionController extends StateNotifier<SessionData> {
       );
       _isPaused = false;
       _pendingNextQuestion = false;
+      _questionsSinceCheckpoint = 0;
 
       // 记录上一轮出现过的单词，优先避开
       Set<int> recentWordIds = {};
       Set<int> hardWordIds = {};
+      var pendingConsolidation = <int>{};
+      try {
+        pendingConsolidation = TestRun.pendingConsolidation(
+          await _progressRepository.getTestRunHistory(
+            limit: TestRun.pendingConsolidationLookbackRuns,
+          ),
+        );
+      } catch (error) {
+        debugPrint('Unable to load consolidation history: $error');
+      }
       try {
         final lastRun = await _progressRepository.getLatestTestRun();
         if (lastRun != null) {
@@ -317,6 +350,38 @@ class SessionController extends StateNotifier<SessionData> {
         }
       }
 
+      // 若当前挑选的词汇量不足以满足用户设定的单轮词数（config.wordsPerSession），
+      // 且不是仅疑难词模式（onlyLeeches），在候选池仍有充裕单词的前提下，
+      // 兜底补齐至 config.wordsPerSession，防止因单日限额等历史消耗导致单轮题量缩水。
+      if (config.plannedWordIds == null &&
+          !config.onlyLeeches &&
+          availableWords.length < config.wordsPerSession &&
+          _candidatePool != null &&
+          _candidatePool!.isNotEmpty) {
+        final existingIds = availableWords.map((w) => w.id).toSet();
+        final fillers = _candidatePool!
+            .where((w) => !existingIds.contains(w.id))
+            .toList();
+        if (config.orderPolicy == 'random') {
+          fillers.shuffle(Random());
+        }
+        for (final w in fillers) {
+          if (availableWords.length >= config.wordsPerSession) break;
+          availableWords.add(w);
+        }
+      }
+
+      availableWords = {
+        for (final word in availableWords) word.id: word,
+      }.values.toList();
+      availableWords = [
+        ...availableWords.where(
+          (word) => pendingConsolidation.contains(word.id),
+        ),
+        ...availableWords.where(
+          (word) => !pendingConsolidation.contains(word.id),
+        ),
+      ];
       debugPrint('Using ${availableWords.length} words for test');
 
       if (availableWords.isEmpty) {
@@ -324,13 +389,18 @@ class SessionController extends StateNotifier<SessionData> {
       }
 
       // 初始化会话数据（带入历史进度偏移量，避免向 attempts 注入 wordId: 0 虚拟脏数据）
-      state = SessionData.initial(
-        initialQueue: availableWords,
-        config: config,
-        sessionId: sessionId,
-        initialProgressOffset: progress,
-        initialAttempts: resumedAttempts,
-      );
+      state =
+          SessionData.initial(
+            initialQueue: availableWords,
+            config: config,
+            sessionId: sessionId,
+            initialProgressOffset: progress,
+            initialAttempts: resumedAttempts,
+          ).copyWith(
+            consolidationWordIds: pendingConsolidation.intersection(
+              availableWords.map((word) => word.id).toSet(),
+            ),
+          );
 
       final restoredQuestion = _restoreQuestionFromCheckpoint(
         checkpoint,
@@ -363,8 +433,22 @@ class SessionController extends StateNotifier<SessionData> {
             )
             .where((item) => item.wordId > 0)
             .toList();
+        // 按检查点保存时的状态分流，而不是一律恢复为 waiting：
+        // - resolved：上一题已判分、正处于 800ms 反馈窗口时进程被杀。
+        //   若恢复成 waiting，会把已经答过的题重新开放作答，同一题被
+        //   二次计入 attempts 并重复推进队列。正确做法是回到反馈态，
+        //   让待推进的计时器继续走完再进入下一题。
+        // - waiting / 其他：题目尚未作答，恢复到作答态并重启倒计时。
+        final restoredAsResolved =
+            checkpoint.status == SessionState.resolved.name;
+        final lastAttempt = restoredAsResolved && state.attempts.isNotEmpty
+            ? state.attempts.last
+            : null;
         state = state.copyWith(
-          state: SessionState.waiting,
+          state: restoredAsResolved
+              ? SessionState.resolved
+              : SessionState.waiting,
+          lastCorrect: lastAttempt?.isCorrect ?? false,
           mainQueue: restoredMainQueue,
           delayedQueue: restoredDelayed,
           retryCounts: checkpoint.retryCounts.isNotEmpty
@@ -378,7 +462,14 @@ class SessionController extends StateNotifier<SessionData> {
           selectedOption: checkpoint.selectedOption,
           millisLeft: checkpoint.millisLeft.clamp(0, config.timeLimitMs),
         );
-        _startCountdown();
+        if (restoredAsResolved) {
+          // 反馈窗口内崩溃：恢复反馈态并继续推进，不重启倒计时。
+          _feedbackRemaining = feedbackDuration;
+          _pendingNextQuestion = true;
+          _scheduleNextQuestion();
+        } else {
+          _startCountdown();
+        }
         return;
       }
 
@@ -444,7 +535,7 @@ class SessionController extends StateNotifier<SessionData> {
       lastCorrect: attempt.isCorrect,
     );
     _handleAttemptResult(attempt);
-    _saveCheckpoint();
+    _maybeSaveCheckpoint();
     _feedbackRemaining = feedbackDuration;
     _pendingNextQuestion = true;
     _scheduleNextQuestion();
@@ -545,6 +636,12 @@ class SessionController extends StateNotifier<SessionData> {
   /// 获取下一个单词
   Word? _getNextWord() {
     if (state.attempts.length >= state.config.effectiveMaxTotalAttempts) {
+      state = state.copyWith(
+        unresolvedWordIds: {
+          ...state.unresolvedWordIds,
+          ...state.mainQueue.map((word) => word.id),
+        },
+      );
       _markRemainingDelayedAsUnresolved();
       return null;
     }
@@ -554,32 +651,22 @@ class SessionController extends StateNotifier<SessionData> {
     final recentIds = state.recentWordIds;
 
     // 已到时且不在冷却窗口中的重测拥有最高优先级。
-    final eligible = delayed
-        .where(
-          (item) =>
-              item.isEligibleAt(completedQuestionCount) &&
-              !recentIds.contains(item.wordId),
-        )
-        .toList()
-      ..sort(
-        (a, b) => a.eligibleAfterQuestion != b.eligibleAfterQuestion
-            ? a.eligibleAfterQuestion.compareTo(b.eligibleAfterQuestion)
-            : b.retryCount.compareTo(a.retryCount),
-      );
+    final eligible =
+        delayed
+            .where(
+              (item) =>
+                  item.isEligibleAt(completedQuestionCount) &&
+                  !recentIds.contains(item.wordId),
+            )
+            .toList()
+          ..sort(
+            (a, b) => a.eligibleAfterQuestion != b.eligibleAfterQuestion
+                ? a.eligibleAfterQuestion.compareTo(b.eligibleAfterQuestion)
+                : b.retryCount.compareTo(a.retryCount),
+          );
 
-    final delayedItem = eligible.isNotEmpty
-        ? eligible.first
-        : state.mainQueue.isEmpty && delayed.isNotEmpty
-        // 主队列耗尽时不等待不存在的间隔题；选择最早合法项，必要时
-        // 解除冷却窗口，保证会话可以收敛。
-        ? (List<DelayedItem>.from(delayed)
-              ..sort(
-                (a, b) => a.eligibleAfterQuestion.compareTo(
-                  b.eligibleAfterQuestion,
-                ),
-              ))
-            .first
-        : null;
+    // 不用立即重复来伪造间隔回忆；尾部缺少间隔题时转入待巩固。
+    final delayedItem = eligible.isNotEmpty ? eligible.first : null;
 
     if (delayedItem != null) {
       final word = _candidatePool
@@ -648,7 +735,6 @@ class SessionController extends StateNotifier<SessionData> {
     _cancelFeedback();
     _committedEventIds.clear();
     _consumedNewWordIds.clear();
-    _pendingDifficultWordIds.clear();
     _legacyStatesSaved = false;
     _isPaused = false;
 
@@ -664,6 +750,11 @@ class SessionController extends StateNotifier<SessionData> {
       return;
     }
 
+    final consolidation = <int>{
+      ...state.consolidationWordIds,
+      ...state.unresolvedWordIds,
+      ...state.firstWrongWordIds.difference(state.correctedWordIds),
+    };
     final newQueue = List<Word>.from(words);
     if (shuffle) {
       newQueue.shuffle(Random());
@@ -676,7 +767,8 @@ class SessionController extends StateNotifier<SessionData> {
       initialQueue: newQueue,
       config: state.config,
       sessionId: sessionId,
-    );
+      totalWords: newQueue.length,
+    ).copyWith(consolidationWordIds: consolidation);
 
     await _presentNextQuestion();
   }
@@ -684,8 +776,19 @@ class SessionController extends StateNotifier<SessionData> {
   /// 只处理内存中的记录、重放队列和反馈，不读写仓储。
   void _handleAttemptResult(Attempt attempt) {
     state = state.copyWith(attempts: [...state.attempts, attempt]);
-    if (_shouldDelayWord(attempt)) {
+    final needsConsolidation =
+        state.consolidationWordIds.contains(attempt.wordId) ||
+        state.attempts.any(
+          (a) => a.wordId == attempt.wordId && (a.isWrong || a.isTimeout),
+        );
+    if (_shouldDelayWord(attempt) ||
+        (needsConsolidation && state.correctionStreak(attempt.wordId) < 2)) {
       _scheduleDelayedReplay(attempt);
+    } else {
+      state = state.copyWith(
+        unresolvedWordIds: Set<int>.from(state.unresolvedWordIds)
+          ..remove(attempt.wordId),
+      );
     }
     if (state.config.ttsOnWrong && !attempt.isCorrect) {
       final word = state.currentQuestion?.word;
@@ -786,7 +889,10 @@ class SessionController extends StateNotifier<SessionData> {
     if (state.delayedQueue.isEmpty) return;
     final unresolved = Set<int>.from(state.unresolvedWordIds)
       ..addAll(state.delayedQueue.map((item) => item.wordId));
-    state = state.copyWith(delayedQueue: const [], unresolvedWordIds: unresolved);
+    state = state.copyWith(
+      delayedQueue: const [],
+      unresolvedWordIds: unresolved,
+    );
   }
 
   /// 按实际经过时间计时，避免主线程偶发延迟使每题时长漂移。
@@ -897,13 +1003,6 @@ class SessionController extends StateNotifier<SessionData> {
         _legacyStatesSaved = true;
       }
 
-      for (final wordId in _pendingDifficultWordIds.toList()) {
-        final current =
-            await _progressRepository.getCardState(wordId) ??
-            CardState.newCard(wordId);
-        await _progressRepository.saveCardState(current.markDifficult());
-        _pendingDifficultWordIds.remove(wordId);
-      }
       if (_consumedNewWordIds.isNotEmpty) {
         await _consumeDailyNew(_consumedNewWordIds.length);
         _consumedNewWordIds.clear();
@@ -921,7 +1020,10 @@ class SessionController extends StateNotifier<SessionData> {
         for (final attempt in allAttempts) {
           run = run.addAttempt(attempt);
         }
-        run = run.finish().copyWith(startedAt: allAttempts.first.timestamp);
+        run = run.finish().copyWith(
+          startedAt: allAttempts.first.timestamp,
+          unresolvedWordIds: state.unresolvedWordIds.toList(),
+        );
         await _progressRepository.batchSaveAttempts(allAttempts);
         await _progressRepository.saveTestRun(run);
       }
@@ -931,7 +1033,7 @@ class SessionController extends StateNotifier<SessionData> {
       if (mounted) {
         state = state.copyWith(state: SessionState.finished, isPaused: false);
       }
-      await _checkpointStore?.clear();
+      await checkpointStore?.clear();
     } catch (e, stackTrace) {
       debugPrint('Error saving completed session: $e\n$stackTrace');
       if (mounted) {
@@ -944,15 +1046,32 @@ class SessionController extends StateNotifier<SessionData> {
     if (state.state == SessionState.saveFailed) await _finishSession();
   }
 
+  /// 按题数节流地安排一次检查点写入（见 [checkpointSaveEveryQuestions]）。
+  void _maybeSaveCheckpoint() {
+    _questionsSinceCheckpoint++;
+    if (_questionsSinceCheckpoint < checkpointSaveEveryQuestions) return;
+    _questionsSinceCheckpoint = 0;
+    _scheduleCheckpointSave();
+  }
+
+  /// 把一次检查点写入排到串行链尾部，保证与 `pauseSession()` 的写入不并发。
+  void _scheduleCheckpointSave() {
+    _checkpointWrite = _checkpointWrite.then((_) => _saveCheckpoint());
+  }
+
+  /// 落盘当前会话快照。
+  ///
+  /// 本方法保证不抛异常：它既被节流路径调用，也被暂停路径调用，任何逃逸的异常
+  /// 都会打断 [_checkpointWrite] 串行链，让后续所有检查点写入永久静默失败。
   Future<void> _saveCheckpoint() async {
-    final store = _checkpointStore;
-    if (store == null || state.sessionId.isEmpty) return;
-    if (state.state == SessionState.finished ||
-        state.state == SessionState.idle) {
-      await store.clear();
-      return;
-    }
     try {
+      final store = checkpointStore;
+      if (store == null || state.sessionId.isEmpty) return;
+      if (state.state == SessionState.finished ||
+          state.state == SessionState.idle) {
+        await store.clear();
+        return;
+      }
       final checkpoint = SessionCheckpoint.fromSessionData(state);
       await store.save(checkpoint);
     } catch (e) {
@@ -1011,7 +1130,12 @@ class SessionController extends StateNotifier<SessionData> {
       debugPrint('Error stopping TTS during pause: $error');
     });
     state = state.copyWith(isPaused: true);
-    _saveCheckpoint();
+    // Persist the in-memory queue and attempts when the app/page is paused so
+    // an OS process kill can resume the exact question instead of losing the
+    // whole unfinished round. This does not commit SRS/progress records.
+    // 暂停是「立即落盘」路径，不等节流窗口，因此把计数一并归零。
+    _questionsSinceCheckpoint = 0;
+    _scheduleCheckpointSave();
   }
 
   /// 恢复会话
@@ -1045,7 +1169,7 @@ class SessionController extends StateNotifier<SessionData> {
       debugPrint('Error stopping TTS during session stop: $error');
     });
 
-    _checkpointStore?.clear();
+    checkpointStore?.clear();
 
     state = state.copyWith(
       state: SessionState.idle,
@@ -1053,19 +1177,6 @@ class SessionController extends StateNotifier<SessionData> {
       isPaused: false,
     );
     debugPrint('Session stopped');
-  }
-
-  /// 跳过当前题目
-  Future<void> skipCurrentQuestion() async {
-    if (state.currentQuestion != null) {
-      await _onTimeout(); // 当作超时处理
-    }
-  }
-
-  /// 手动标记也延迟到整轮完成后落盘。
-  Future<void> markCurrentWordDifficult() async {
-    final word = state.currentQuestion?.word;
-    if (word != null) _pendingDifficultWordIds.add(word.id);
   }
 
   @override

@@ -1,7 +1,6 @@
 import 'dart:convert';
 
 import '../../../models/attempt.dart';
-import '../../../models/question.dart';
 import '../../../session/session_models.dart';
 
 /// 可版本化的会话快照。它保存恢复所需的队列和当前题，而不是只保存词 ID。
@@ -77,6 +76,35 @@ class SessionCheckpoint {
       unresolvedWordIds: data.unresolvedWordIds,
     );
   }
+
+  /// 该快照是否代表一份「可以继续」的未完成进度。
+  ///
+  /// 恢复判据必须以快照本身为准，而不是设置里的 `hasActiveSession`：
+  /// 后者依赖 `currentSessionId`，而该字段只由 `stageCustomSession` 写入，
+  /// 首页「开始学习」发起的会话从不写它，会让崩溃恢复永远不可达。
+  ///
+  /// 会话正常结束时状态为 `finished`（并在 `_finishSession` 中清理快照），
+  /// 这里再做一次防御，避免把已结束或空的快照当成待恢复会话。
+  bool get isResumable {
+    if (status == SessionState.finished.name ||
+        status == SessionState.idle.name) {
+      return false;
+    }
+    return currentWordId != null ||
+        mainQueueWordIds.isNotEmpty ||
+        delayedQueue.isNotEmpty;
+  }
+
+  /// 尚未作答的题数（主队列 + 延迟队列 + 当前题）。
+  int get remainingQuestionCount =>
+      mainQueueWordIds.length +
+      delayedQueue.length +
+      (currentWordId != null ? 1 : 0);
+
+  /// 本轮预计总题数，与 `SessionData.totalQuestions` 口径一致。
+  ///
+  /// `currentProgress` 是「已作答数 + 历史偏移」，因此总数 = 进度 + 剩余。
+  int get totalQuestionCount => currentProgress + remainingQuestionCount;
 
   Map<String, dynamic> toJson() => {
     'schemaVersion': schemaVersion,
@@ -185,17 +213,4 @@ class SessionCheckpoint {
 
   List<Attempt> decodeAttempts() =>
       attempts.map(Attempt.fromJson).toList(growable: false);
-
-  Question? questionForWord(dynamic word) {
-    if (currentWordId == null ||
-        currentOptions == null ||
-        currentCorrectIndex == null) {
-      return null;
-    }
-    return Question(
-      word: word,
-      options: currentOptions!,
-      correctIndex: currentCorrectIndex!,
-    );
-  }
 }

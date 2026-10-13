@@ -19,10 +19,6 @@ class WordSelectionService {
        _getDailyNewRemaining = getDailyNewRemaining,
        _consumeDailyNew = consumeDailyNew;
 
-  /// 在首次有效回忆提交后消费新词额度。
-  /// 预览计划和选词本身不会调用它。
-  Future<void> consumeNewWordIfNeeded(int _) => _consumeDailyNew(1);
-
   Future<List<Word>> buildWordListForNewSession({
     required SessionConfig config,
     required List<Word> candidatePool,

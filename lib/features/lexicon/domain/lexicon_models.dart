@@ -166,13 +166,4 @@ class LegacyLexiconMapper {
     LearningItem.meaningRecognition(sense.id),
     LearningItem.meaningRecall(sense.id),
   ];
-
-  /// Production requires reviewed content; legacy imported senses are kept
-  /// to recognition and recall until they have been checked.
-  LearningItem? productionItemFor(Sense sense) {
-    if (sense.qualityStatus != 'reviewed' || sense.definition.trim().isEmpty) {
-      return null;
-    }
-    return LearningItem.englishProduction(sense.id);
-  }
 }

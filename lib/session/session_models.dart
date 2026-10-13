@@ -40,7 +40,8 @@ class DelayedItem {
     int? retryCount,
   }) => DelayedItem(
     wordId: wordId,
-    eligibleAfterQuestion: eligibleAfterQuestion ?? afterN ?? this.eligibleAfterQuestion,
+    eligibleAfterQuestion:
+        eligibleAfterQuestion ?? afterN ?? this.eligibleAfterQuestion,
     retryCount: retryCount ?? this.retryCount,
   );
 
@@ -68,10 +69,13 @@ class SessionConfig {
   final SrsConfig srsConfig; // SRS 算法配置
   /// 单词在本轮允许进入重测队列的最大次数。
   final int maxRetriesPerWord;
+
   /// 本轮最多结算多少道题；0 表示按词数和重测上限自动计算。
   final int maxTotalAttempts;
+
   /// 最近出现窗口的大小，用于避免即时工作记忆作答。
   final int cooldownWindow;
+
   /// 今日计划已经选出的稳定顺序；为空时才使用兼容选词逻辑。
   final List<int>? plannedWordIds;
 
@@ -235,7 +239,7 @@ class SessionConfig {
     );
     return SessionConfig(
       levels: levels == null || levels.isEmpty ? {'A1'} : levels,
-      wordsPerSession: intValue('wordsPerSession', 20).clamp(1, 1000),
+      wordsPerSession: intValue('wordsPerSession', 100).clamp(1, 1000),
       timeLimitMs: intValue('timeLimitMs', 2000).clamp(1000, 30000),
       orderPolicy: json['orderPolicy'] == 'random' ? 'random' : 'by_level',
       onlyLeeches: boolValue('onlyLeeches', false),
@@ -285,10 +289,17 @@ class SessionData {
   final SessionConfig config; // 会话配置
   final bool isPaused; // 是否暂停中
   final int initialProgressOffset; // 初始进度偏移量（用于恢复会话时反映历史进度，免注入虚拟脏数据）
+  /// 本轮会话的目标单词总量（去重）。若未显式指定则降级为 config.wordsPerSession。
+  final int? _totalWords;
+
   /// 每个单词已经实际重测的次数；只在本轮内有效。
   final Map<int, int> retryCounts;
+
   /// 达到重测上限或总题数上限后，本轮未解决的词。
   final Set<int> unresolvedWordIds;
+
+  /// 从上一轮带入的待巩固词，同样需要连续两次间隔答对。
+  final Set<int> consolidationWordIds;
 
   const SessionData({
     required this.state,
@@ -305,9 +316,14 @@ class SessionData {
     required this.config,
     this.isPaused = false,
     this.initialProgressOffset = 0,
+    int? totalWords,
     this.retryCounts = const {},
     this.unresolvedWordIds = const {},
-  });
+    this.consolidationWordIds = const {},
+  }) : _totalWords = totalWords;
+
+  /// 本轮目标总词数
+  int get totalWords => _totalWords ?? config.wordsPerSession;
 
   /// 创建初始会话数据
   factory SessionData.initial({
@@ -316,6 +332,7 @@ class SessionData {
     required String sessionId,
     int initialProgressOffset = 0,
     List<Attempt> initialAttempts = const [],
+    int? totalWords,
   }) => SessionData(
     state: SessionState.idle,
     mainQueue: initialQueue,
@@ -331,9 +348,106 @@ class SessionData {
     config: config,
     isPaused: false,
     initialProgressOffset: initialProgressOffset,
+    totalWords:
+        totalWords ??
+        (initialQueue.isNotEmpty || initialAttempts.isNotEmpty
+            ? <int>{
+                ...initialQueue.map((word) => word.id),
+                ...initialAttempts
+                    .where((a) => a.wordId > 0)
+                    .map((a) => a.wordId),
+              }.length
+            : config.wordsPerSession),
     retryCounts: const {},
     unresolvedWordIds: const {},
   );
+
+  /// 测试覆盖进度：一个词无论答对、答错或重测多少次，只计一次。
+  /// 不用队列长度倒推，避免错题回队后进度回退或停滞。
+  int get testedWordCount => attempts
+      .where((attempt) => attempt.wordId > 0)
+      .map((attempt) => attempt.wordId)
+      .toSet()
+      .length;
+
+  double get testedProgressRatio =>
+      totalWords <= 0 ? 0.0 : (testedWordCount / totalWords).clamp(0.0, 1.0);
+
+  String get testProgressLabel => '已测 $testedWordCount / $totalWords';
+
+  /// Only count work still in this round; unresolved words belong to the next group.
+  int get remainingConsolidationCount => <int>{
+    ...delayedQueue.map((item) => item.wordId),
+    if (currentQuestion != null &&
+        isCurrentQuestionRetry &&
+        (state == SessionState.waiting || state == SessionState.presenting))
+      currentQuestion!.word.id,
+  }.length;
+
+  bool get isConsolidating =>
+      totalWords > 0 &&
+      testedWordCount >= totalWords &&
+      remainingConsolidationCount > 0 &&
+      (state == SessionState.waiting ||
+          state == SessionState.presenting ||
+          state == SessionState.resolved);
+
+  String get testGroupLabel => isConsolidating
+      ? '巩固中 · 剩余 $remainingConsolidationCount 词'
+      : (isCurrentQuestionRetry ? '重测' : '');
+
+  /// 尚未完成的唯一单词集合（主队列 + 延迟队列 + 当前题目）。
+  Set<int> get remainingWordIds {
+    final ids = <int>{};
+    for (final w in mainQueue) {
+      ids.add(w.id);
+    }
+    for (final d in delayedQueue) {
+      ids.add(d.wordId);
+    }
+    if (currentQuestion != null) {
+      ids.add(currentQuestion!.word.id);
+    }
+    return ids;
+  }
+
+  /// 本轮已彻底完成（移出待学队列且当前不在重测中）的唯一目标单词数量。
+  int get completedWordCount {
+    final effectiveTotal = totalWords > 0 ? totalWords : config.wordsPerSession;
+    if (effectiveTotal <= 0) return 0;
+    if (isFinished) return effectiveTotal;
+    final remaining = remainingWordIds.length;
+    return (effectiveTotal - remaining).clamp(0, effectiveTotal);
+  }
+
+  /// 当前正在进行的单词位次（1 ~ totalWords）。
+  /// 无论发生多少次错题重测，分子永远不超出分母。
+  int get currentWordIndex {
+    final effectiveTotal = totalWords > 0 ? totalWords : config.wordsPerSession;
+    if (effectiveTotal <= 0) return 0;
+    if (isFinished) return effectiveTotal;
+    return (completedWordCount + 1).clamp(1, effectiveTotal);
+  }
+
+  /// 进度条比例（0.0 ~ 1.0），基于唯一目标词完成度平滑推进。
+  double get progressRatio {
+    final effectiveTotal = totalWords > 0 ? totalWords : config.wordsPerSession;
+    if (effectiveTotal <= 0) return 0.0;
+    if (isFinished) return 1.0;
+    return (completedWordCount / effectiveTotal).clamp(0.0, 1.0);
+  }
+
+  /// 当前题目是否为错题/超时重测
+  bool get isCurrentQuestionRetry {
+    if (currentQuestion == null) return false;
+    final qId = currentQuestion!.word.id;
+    if (state == SessionState.resolved &&
+        attempts.isNotEmpty &&
+        attempts.last.wordId == qId) {
+      return attempts.last.isInSessionRetry;
+    }
+    return attempts.any((a) => a.wordId == qId);
+  }
 
   /// 当前进度
   int get currentProgress => initialProgressOffset + attempts.length;
@@ -347,9 +461,6 @@ class SessionData {
 
   /// 是否完成
   bool get isFinished => state == SessionState.finished;
-
-  /// 是否有当前题目
-  bool get hasCurrentQuestion => currentQuestion != null;
 
   /// 准确率
   double get accuracy {
@@ -380,23 +491,42 @@ class SessionData {
   Set<int> get firstWrongWordIds =>
       firstWrongAttempts.map((attempt) => attempt.wordId).toSet();
 
-  Set<int> get correctedWordIds {
-    final failed = firstWrongWordIds;
-    final firstByWord = <int, Attempt>{
-      for (final attempt in firstAttempts) attempt.wordId: attempt,
-    };
-    return failed
-        .where(
-          (wordId) => attempts.any(
-            (attempt) =>
-                attempt.wordId == wordId &&
-                !identical(attempt, firstByWord[wordId]) &&
-                attempt.isCorrect &&
-                !attempt.usedHint,
-          ),
-        )
-        .toSet();
+  /// 错词必须在至少三道其他题的间隔后连续两次独立答对。
+  int correctionStreak(int wordId) {
+    var streak = 0;
+    int? previousIndex;
+    for (var i = 0; i < attempts.length; i++) {
+      final attempt = attempts[i];
+      if (attempt.wordId != wordId) continue;
+      final qualified =
+          attempt.isCorrect &&
+          !attempt.usedHint &&
+          SrsAlgorithm.calculateQuality(
+                result: attempt.result,
+                reactionTime: attempt.rtMs,
+                timeLimit: config.timeLimitMs,
+                slowThresholdMultiplier: config.slowThreshold,
+              ) >
+              3;
+      if (!qualified) {
+        streak = 0;
+      } else if ((previousIndex == null &&
+              consolidationWordIds.contains(wordId)) ||
+          (previousIndex != null && i - previousIndex >= 4)) {
+        streak++;
+      } else {
+        streak = 0;
+      }
+      previousIndex = i;
+    }
+    return streak;
   }
+
+  Set<int> get correctedWordIds => firstWrongWordIds
+      .where(
+        (id) => correctionStreak(id) >= 2 && !unresolvedWordIds.contains(id),
+      )
+      .toSet();
 
   double get correctionSuccessRate {
     if (firstWrongWordIds.isEmpty) return 0.0;
@@ -416,34 +546,18 @@ class SessionData {
   List<Attempt> get wrongAttempts =>
       attempts.where((a) => a.isWrong || a.isTimeout).toList();
 
-  /// 勉强正确的题目
-  List<Attempt> get slowCorrectAttempts => attempts
-      .where(
-        (a) =>
-            a.isCorrect &&
-            !a.usedHint &&
-            SrsAlgorithm.calculateQuality(
-              result: a.result,
-              reactionTime: a.rtMs,
-              timeLimit: config.timeLimitMs,
-              slowThresholdMultiplier: config.slowThreshold,
-            ) ==
-            3,
-      )
-      .toList();
-
   List<Attempt> get firstSlowCorrectAttempts => firstAttempts
       .where(
         (a) =>
             a.isCorrect &&
             !a.usedHint &&
             SrsAlgorithm.calculateQuality(
-              result: a.result,
-              reactionTime: a.rtMs,
-              timeLimit: config.timeLimitMs,
-              slowThresholdMultiplier: config.slowThreshold,
-            ) ==
-            3,
+                  result: a.result,
+                  reactionTime: a.rtMs,
+                  timeLimit: config.timeLimitMs,
+                  slowThresholdMultiplier: config.slowThreshold,
+                ) ==
+                3,
       )
       .toList(growable: false);
 
@@ -467,8 +581,10 @@ class SessionData {
     SessionConfig? config,
     bool? isPaused,
     int? initialProgressOffset,
+    int? totalWords,
     Map<int, int>? retryCounts,
     Set<int>? unresolvedWordIds,
+    Set<int>? consolidationWordIds,
   }) => SessionData(
     state: state ?? this.state,
     mainQueue: mainQueue ?? this.mainQueue,
@@ -484,8 +600,10 @@ class SessionData {
     config: config ?? this.config,
     isPaused: isPaused ?? this.isPaused,
     initialProgressOffset: initialProgressOffset ?? this.initialProgressOffset,
+    totalWords: totalWords ?? this.totalWords,
     retryCounts: retryCounts ?? this.retryCounts,
     unresolvedWordIds: unresolvedWordIds ?? this.unresolvedWordIds,
+    consolidationWordIds: consolidationWordIds ?? this.consolidationWordIds,
   );
 
   @override

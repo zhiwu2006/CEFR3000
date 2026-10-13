@@ -104,6 +104,53 @@ void main() {
       expect(distractors.toSet().length, equals(distractors.length));
     });
 
+    for (final samePosCount in [1, 2]) {
+      test(
+        'fills same-level candidates after $samePosCount same-POS matches',
+        () {
+          // Put a cross-level candidate first so linear fallback cannot hide the bug.
+          final pool = [
+            candidatePool[6],
+            candidatePool[0],
+            candidatePool[1],
+            if (samePosCount == 2) candidatePool[2],
+            candidatePool[4],
+            candidatePool[5],
+          ];
+          for (var seed = 0; seed < 10; seed++) {
+            final result = DistractorService(
+              seed: seed,
+            ).buildQuestion(candidatePool[0], pool);
+            expect(result.options, isNot(contains('美丽的')));
+            expect(result.options.toSet(), hasLength(4));
+            expect(result.options[result.correctIndex], '苹果');
+          }
+        },
+      );
+    }
+
+    test(
+      'cross-level supplement uses seeded selection rather than linear fallback',
+      () {
+        final pool = [
+          candidatePool[6],
+          candidatePool[7],
+          candidatePool[0],
+          candidatePool[1],
+          candidatePool[2],
+        ];
+        final chosen = <String>{};
+        for (var seed = 0; seed < 30; seed++) {
+          final result = DistractorService(
+            seed: seed,
+          ).buildQuestion(candidatePool[0], pool);
+          expect(result.options, containsAll(['苹果', '香蕉', '猫']));
+          chosen.addAll(result.options.where((s) => s == '美丽的' || s == '汽车'));
+        }
+        expect(chosen, {'美丽的', '汽车'});
+      },
+    );
+
     test('handles insufficient same-level same-POS candidates', () {
       // 创建一个只有少数同级别同词性候选词的场景
       final limitedPool = [

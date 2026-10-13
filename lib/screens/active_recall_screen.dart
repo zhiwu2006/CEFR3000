@@ -37,6 +37,10 @@ class _ActiveRecallScreenState extends ConsumerState<ActiveRecallScreen> {
   List<Word> _words = const [];
   int _index = 0;
   bool _revealed = false;
+
+  /// 用户在看到答案前是否声称已回忆出来。
+  /// true = 独立回忆（显示答案仅用于验证），false = 依赖答案。
+  bool _recalledBeforeReveal = false;
   bool _loading = true;
   bool _committing = false;
   DateTime? _startedAt;
@@ -80,9 +84,14 @@ class _ActiveRecallScreenState extends ConsumerState<ActiveRecallScreen> {
     }
   }
 
-  void _reveal() {
+  /// 用户做出预判后揭示答案。
+  /// [recalled] 为 true 表示用户声称已独立回忆出答案（仅验证）。
+  void _revealWithJudgment({required bool recalled}) {
     if (_committing || _current == null) return;
-    setState(() => _revealed = true);
+    setState(() {
+      _recalledBeforeReveal = recalled;
+      _revealed = true;
+    });
   }
 
   Future<void> _submit(RecallRating rating) async {
@@ -111,9 +120,9 @@ class _ActiveRecallScreenState extends ConsumerState<ActiveRecallScreen> {
         attempt: attempt,
         timeLimitMs: widget.config.timeLimitMs,
         slowThreshold: widget.config.slowThreshold,
-        // 这个页面允许先揭示再自评；保存真实证据，避免把看过答案
-        // 的自评伪装成独立长期回忆。
-        answerRevealed: _revealed,
+        // 若用户在揭示答案前声称已回忆出来（_recalledBeforeReveal），
+        // 则视为独立回忆，answerRevealed = false；否则为辅助回忆。
+        answerRevealed: !_recalledBeforeReveal,
         hintUsed: false,
         taskType: ReviewTaskType.recall,
         skill: LearningSkill.meaningRecall,
@@ -131,6 +140,7 @@ class _ActiveRecallScreenState extends ConsumerState<ActiveRecallScreen> {
       setState(() {
         _index++;
         _revealed = false;
+        _recalledBeforeReveal = false;
         _committing = false;
         _startedAt = DateTime.now();
       });
@@ -197,21 +207,50 @@ class _ActiveRecallScreenState extends ConsumerState<ActiveRecallScreen> {
                 Column(
                   children: [
                     Text(
-                      '先在心里回忆中文含义，再查看答案',
+                      '先在心里回忆中文含义',
                       textAlign: TextAlign.center,
                       style: theme.textTheme.bodyLarge,
                     ),
                     const SizedBox(height: 24),
-                    FilledButton.icon(
-                      onPressed: _reveal,
-                      icon: const Icon(Icons.visibility_outlined),
-                      label: const Text('显示答案'),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        FilledButton.icon(
+                          onPressed: () => _revealWithJudgment(recalled: true),
+                          icon: const Icon(Icons.check_circle_outline),
+                          label: const Text('想起来了'),
+                          style: FilledButton.styleFrom(
+                            backgroundColor: theme.colorScheme.primaryContainer,
+                            foregroundColor:
+                                theme.colorScheme.onPrimaryContainer,
+                          ),
+                        ),
+                        const SizedBox(width: 16),
+                        OutlinedButton.icon(
+                          onPressed: () => _revealWithJudgment(recalled: false),
+                          icon: const Icon(Icons.help_outline),
+                          label: const Text('没想起来'),
+                        ),
+                      ],
                     ),
                   ],
                 )
               else
                 Column(
                   children: [
+                    Chip(
+                      avatar: Icon(
+                        _recalledBeforeReveal ? Icons.star : Icons.visibility,
+                        size: 16,
+                      ),
+                      label: Text(
+                        _recalledBeforeReveal ? '独立回忆 · 验证答案' : '辅助回忆',
+                      ),
+                      backgroundColor: _recalledBeforeReveal
+                          ? Colors.green.withValues(alpha: 0.15)
+                          : Colors.orange.withValues(alpha: 0.15),
+                    ),
+                    const SizedBox(height: 12),
                     Text(
                       word.cnDefs.join('；'),
                       textAlign: TextAlign.center,

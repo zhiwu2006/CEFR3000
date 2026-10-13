@@ -9,6 +9,8 @@ import 'package:vocab_flash_test/data/word_repository.dart';
 import 'package:vocab_flash_test/features/study/application/study_plan_service.dart';
 import 'package:vocab_flash_test/features/memory/domain/recall_models.dart';
 import 'package:vocab_flash_test/models/word.dart';
+import 'package:vocab_flash_test/models/test_run.dart';
+import 'package:vocab_flash_test/models/card_state.dart';
 
 class _Words implements WordRepository {
   final values = const [
@@ -137,6 +139,27 @@ void main() {
     expect(quotaPlan.newItemCount, 0);
     expect(quotaPlan.wordIds, contains(7));
     expect(quotaPlan.wordIds, isNot(contains(8)));
+    await repository.saveCardState(CardState.newCard(8));
+    await repository.saveTestRun(TestRun.create(
+      id: 'pending', size: 1, levels: {'A1'}, timeLimitMs: 2000,
+      orderPolicy: 'by_level', onlyLeeches: false,
+    ).finish().copyWith(unresolvedWordIds: [8]));
+    // Hive close/reopen verifies the new persisted field, not just an in-memory map.
+    await repository.dispose();
+    await repository.init();
+    final nextPlan = await service.buildTodayPlan(
+      levels: {'A1'}, maxItems: 1, maxMinutes: 10,
+      dailyNewLimit: 1, dailyNewUsed: 1,
+    );
+    expect(nextPlan.wordIds, {8});
+    await repository.saveWordPreference(UserWordPreference(
+      lexemeId: 'legacy:8', suspended: true, updatedAt: DateTime.now(),
+    ));
+    final filteredPlan = await service.buildTodayPlan(
+      levels: {'A1'}, maxItems: 1, maxMinutes: 10,
+      dailyNewLimit: 1, dailyNewUsed: 1,
+    );
+    expect(filteredPlan.wordIds, isNot(contains(8)));
     await repository.dispose();
     await directory.delete(recursive: true);
   });

@@ -18,13 +18,15 @@ class LoadingScreen extends ConsumerWidget {
           if (ready) {
             // 数据加载完成，导航到首页
             WidgetsBinding.instance.addPostFrameCallback((_) {
-              Navigator.of(context).pushReplacementNamed('/home');
+              if (context.mounted) {
+                Navigator.of(context).pushReplacementNamed('/home');
+              }
             });
           }
           return _buildLoadingContent(context, theme, ready);
         },
         loading: () => _buildLoadingContent(context, theme, false),
-        error: (error, stack) => _buildErrorContent(context, theme, error),
+        error: (error, stack) => _buildErrorContent(context, ref, theme, error),
       ),
     );
   }
@@ -95,7 +97,7 @@ class LoadingScreen extends ConsumerWidget {
                 ),
                 const SizedBox(height: 16),
                 Text(
-                  ready ? '初始化完成' : '正在加载词库...',
+                  ready ? '初始化完成' : '正在准备学习数据...',
                   style: theme.textTheme.bodySmall?.copyWith(
                     color: theme.colorScheme.onSurface.withValues(alpha: 0.6),
                   ),
@@ -110,6 +112,7 @@ class LoadingScreen extends ConsumerWidget {
 
   Widget _buildErrorContent(
     BuildContext context,
+    WidgetRef ref,
     ThemeData theme,
     Object error,
   ) {
@@ -154,7 +157,9 @@ class LoadingScreen extends ConsumerWidget {
 
             ElevatedButton(
               onPressed: () {
-                // 重新启动应用
+                // 重新执行失败的数据初始化，而不是复用缓存的错误。
+                ref.invalidate(coreInitializationProvider);
+                ref.invalidate(initializationProvider);
                 Navigator.of(context).pushReplacement(
                   MaterialPageRoute(builder: (_) => const LoadingScreen()),
                 );

@@ -6,6 +6,7 @@ import 'package:vocab_flash_test/domain/testset.dart';
 import 'package:vocab_flash_test/models/models.dart';
 import 'package:vocab_flash_test/features/study/domain/session_checkpoint.dart';
 import 'package:vocab_flash_test/features/study/data/session_checkpoint_store.dart';
+import 'package:vocab_flash_test/session/session_models.dart';
 
 void main() {
   group('专项优化测试：多义词干扰项防污染 (P0-1)', () {
@@ -235,6 +236,23 @@ void main() {
       expect(deck.any((w) => w.id == 1), isTrue);
       expect(deck.any((w) => w.id == 999), isFalse);
       expect(deck.length, 2);
+    });
+  });
+
+  group('专项优化测试：单词配对默认数量为 100 个', () {
+    test('SessionSettings 与 AppSettings 默认配置为 100 词', () {
+      const session = SessionSettings();
+      expect(session.wordsPerSession, 100);
+
+      final appSettings = AppSettings.defaultSettings;
+      expect(appSettings.wordsPerSession, 100);
+      expect(appSettings.session.wordsPerSession, 100);
+    });
+
+    test('SessionConfig.fromCheckpointMap 缺省时默认回退为 100', () {
+      final config = SessionConfig.fromCheckpointMap({'timeLimitMs': 2000});
+      expect(config, isNotNull);
+      expect(config!.wordsPerSession, 100);
     });
   });
 }

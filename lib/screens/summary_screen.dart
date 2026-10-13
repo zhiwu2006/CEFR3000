@@ -57,6 +57,17 @@ class SummaryScreen extends ConsumerWidget {
               wrongColor,
             ),
             const SizedBox(height: 24),
+            if (sessionData.unresolvedWordIds.isNotEmpty)
+              Card(
+                child: Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Text(
+                    '待巩固 ${sessionData.unresolvedWordIds.length} 词，已保留到下一组优先安排。\n'
+                    '本轮未完成巩固不等于已掌握：尾部没有足够的间隔题，或达到重测／总作答上限时，会保留待巩固任务，而不是立即重复或无限延长本轮。\n'
+                    '巩固标准为间隔后连续两次合格答对；下一组仍遵守所选等级和暂停设置。',
+                  ),
+                ),
+              ),
             if (sessionData.firstWrongAttempts.isNotEmpty)
               _buildWrongAttemptsList(
                 context,
@@ -416,9 +427,30 @@ class SummaryScreen extends ConsumerWidget {
     await ref.read(appSettingsProvider.notifier).clearTestProgress();
     if (!context.mounted) return;
 
-    Navigator.of(context).pushReplacement(
-      MaterialPageRoute(builder: (_) => TestScreen(config: sessionData.config)),
-    );
+    try {
+      final plan = await ref.refresh(todayRecognitionPlanProvider.future);
+      if (!context.mounted) return;
+      if (plan.items.isEmpty) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('当前范围没有符合条件的复习任务')));
+        return;
+      }
+      Navigator.of(context).pushReplacement(
+        MaterialPageRoute(
+          builder: (_) => TestScreen(
+            config: SessionConfig.fromAppSettings(
+              ref.read(appSettingsProvider),
+            ).copyWith(plannedWordIds: plan.wordIds.toList()),
+          ),
+        ),
+      );
+    } catch (_) {
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('生成下一组失败，请重试')));
+    }
   }
 }
 
@@ -695,42 +727,6 @@ class _ExplanationContent extends ConsumerWidget {
         if (cn.isNotEmpty)
           Text(cn, style: const TextStyle(fontSize: 13, color: Colors.grey)),
       ],
-    );
-  }
-}
-
-extension SessionConfigCopyWith on SessionConfig {
-  SessionConfig copyWith({
-    Set<String>? levels,
-    int? wordsPerSession,
-    int? timeLimitMs,
-    String? orderPolicy,
-    bool? onlyLeeches,
-    int? wrongDelay,
-    int? slowDelay,
-    double? slowThreshold,
-    double? newCardRatio,
-    int? dailyNewLimit,
-    bool? ttsAutoPlay,
-    bool? ttsOnWrong,
-    int? leechLapsesThreshold,
-    bool? leechIncludeMarked,
-  }) {
-    return SessionConfig(
-      levels: levels ?? this.levels,
-      wordsPerSession: wordsPerSession ?? this.wordsPerSession,
-      timeLimitMs: timeLimitMs ?? this.timeLimitMs,
-      orderPolicy: orderPolicy ?? this.orderPolicy,
-      onlyLeeches: onlyLeeches ?? this.onlyLeeches,
-      wrongDelay: wrongDelay ?? this.wrongDelay,
-      slowDelay: slowDelay ?? this.slowDelay,
-      slowThreshold: slowThreshold ?? this.slowThreshold,
-      newCardRatio: newCardRatio ?? this.newCardRatio,
-      dailyNewLimit: dailyNewLimit ?? this.dailyNewLimit,
-      ttsAutoPlay: ttsAutoPlay ?? this.ttsAutoPlay,
-      ttsOnWrong: ttsOnWrong ?? this.ttsOnWrong,
-      leechLapsesThreshold: leechLapsesThreshold ?? this.leechLapsesThreshold,
-      leechIncludeMarked: leechIncludeMarked ?? this.leechIncludeMarked,
     );
   }
 }
