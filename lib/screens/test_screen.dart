@@ -318,90 +318,140 @@ class _TestScreenState extends ConsumerState<TestScreen>
     final secondary = ThemeManager.getSecondaryTextColor(themeStyle);
     final controller = ref.read(sessionControllerProvider.notifier);
 
+    final header = Text(
+      '新词 · 先记一下，稍后再考',
+      textAlign: TextAlign.center,
+      style:
+          (isTablet ? theme.textTheme.titleMedium : theme.textTheme.labelLarge)
+              ?.copyWith(color: secondary),
+    );
+    final wordDisplay = _buildWordDisplay(
+      context,
+      theme,
+      null,
+      question,
+      themeStyle,
+      isTablet: isTablet,
+    );
+    final definitions = Container(
+      padding: EdgeInsets.all(isTablet ? 28 : 20),
+      decoration: ThemeManager.getCardDecoration(themeStyle),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            '释义',
+            style:
+                (isTablet
+                        ? theme.textTheme.titleSmall
+                        : theme.textTheme.labelMedium)
+                    ?.copyWith(color: secondary),
+          ),
+          SizedBox(height: isTablet ? 16 : 8),
+          for (var i = 0; i < word.cnDefs.length; i++)
+            Padding(
+              padding: EdgeInsets.only(bottom: isTablet ? 14 : 6),
+              child: Text(
+                word.cnDefs.length > 1
+                    ? '${i + 1}. ${word.cnDefs[i]}'
+                    : word.cnDefs[i],
+                style:
+                    (isTablet
+                            ? theme.textTheme.headlineSmall
+                            : theme.textTheme.titleMedium)
+                        ?.copyWith(color: textColor, height: 1.4),
+              ),
+            ),
+          if (word.cnDefs.isEmpty)
+            Text(
+              '暂无释义',
+              style: theme.textTheme.bodyMedium?.copyWith(color: secondary),
+            ),
+        ],
+      ),
+    );
+    final buttonHeight = isTablet ? 72.0 : 48.0;
+    final buttonText = isTablet ? theme.textTheme.titleMedium : null;
+    final buttons = Row(
+      children: [
+        Expanded(
+          child: SizedBox(
+            height: buttonHeight,
+            child: OutlinedButton.icon(
+              onPressed: () =>
+                  ref.read(ttsServiceProvider).speak(word.headword),
+              icon: const Icon(Icons.volume_up_outlined),
+              label: Text('再听一遍', style: buttonText),
+            ),
+          ),
+        ),
+        SizedBox(width: isTablet ? 24 : 12),
+        Expanded(
+          flex: 2,
+          child: SizedBox(
+            height: buttonHeight,
+            child: FilledButton(
+              onPressed: sessionData.isPaused
+                  ? null
+                  : controller.finishStudyCard,
+              child: Text('记住了，继续', style: buttonText),
+            ),
+          ),
+        ),
+      ],
+    );
+
+    final size = MediaQuery.sizeOf(context);
+    if (isTablet && size.width > size.height) {
+      // 平板横屏：左边单词，右边释义和操作，按钮固定在底部便于拇指点按。
+      return Padding(
+        padding: const EdgeInsets.fromLTRB(40, 24, 40, 32),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Expanded(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [header, const SizedBox(height: 24), wordDisplay],
+              ),
+            ),
+            const SizedBox(width: 40),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Expanded(
+                    child: Center(
+                      child: SingleChildScrollView(child: definitions),
+                    ),
+                  ),
+                  const SizedBox(height: 24),
+                  buttons,
+                ],
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
     return Center(
       child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 640),
+        constraints: BoxConstraints(maxWidth: isTablet ? 720 : 640),
         child: SingleChildScrollView(
           padding: EdgeInsets.all(isTablet ? 32 : 20),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              Text(
-                '新词 · 先记一下，稍后再考',
-                textAlign: TextAlign.center,
-                style: theme.textTheme.labelLarge?.copyWith(color: secondary),
-              ),
+              header,
               const SizedBox(height: 16),
-              _buildWordDisplay(
-                context,
-                theme,
-                null,
-                question,
-                themeStyle,
-                isTablet: isTablet,
-              ),
+              wordDisplay,
               const SizedBox(height: 20),
-              Container(
-                padding: const EdgeInsets.all(20),
-                decoration: ThemeManager.getCardDecoration(themeStyle),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      '释义',
-                      style: theme.textTheme.labelMedium?.copyWith(
-                        color: secondary,
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    for (var i = 0; i < word.cnDefs.length; i++)
-                      Padding(
-                        padding: const EdgeInsets.only(bottom: 6),
-                        child: Text(
-                          word.cnDefs.length > 1
-                              ? '${i + 1}. ${word.cnDefs[i]}'
-                              : word.cnDefs[i],
-                          style:
-                              (isTablet
-                                      ? theme.textTheme.titleLarge
-                                      : theme.textTheme.titleMedium)
-                                  ?.copyWith(color: textColor),
-                        ),
-                      ),
-                    if (word.cnDefs.isEmpty)
-                      Text(
-                        '暂无释义',
-                        style: theme.textTheme.bodyMedium?.copyWith(
-                          color: secondary,
-                        ),
-                      ),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 24),
-              Row(
-                children: [
-                  Expanded(
-                    child: OutlinedButton.icon(
-                      onPressed: () =>
-                          ref.read(ttsServiceProvider).speak(word.headword),
-                      icon: const Icon(Icons.volume_up_outlined),
-                      label: const Text('再听一遍'),
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    flex: 2,
-                    child: FilledButton(
-                      onPressed: sessionData.isPaused
-                          ? null
-                          : controller.finishStudyCard,
-                      child: const Text('记住了，继续'),
-                    ),
-                  ),
-                ],
-              ),
+              definitions,
+              SizedBox(height: isTablet ? 32 : 24),
+              buttons,
             ],
           ),
         ),
