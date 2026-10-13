@@ -1,0 +1,15 @@
+// 模型类导出文件
+export 'word.dart';
+export 'question.dart';
+export 'attempt.dart';
+export 'card_state.dart';
+export 'test_run.dart';
+export 'app_settings.dart';
+export 'learning_mode_preset.dart';
+export 'word_status.dart';
+export 'word_explanation.dart';
+export 'word_detailed_explanation.dart';
+export 'user_config.dart';
+export 'daily_history_models.dart';
+export 'review_event.dart';
+export 'exposure_event.dart';

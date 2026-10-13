@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="512" height="512" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <!-- 背景渐变 -->
+    <linearGradient id="bgGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#2196F3;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#1976D2;stop-opacity:1" />
+    </linearGradient>
+    
+    <!-- 卡片阴影 -->
+    <filter id="cardShadow" x="-50%" y="-50%" width="200%" height="200%">
+      <feDropShadow dx="8" dy="8" stdDeviation="12" flood-color="#000000" flood-opacity="0.2"/>
+    </filter>
+  </defs>
+  
+  <!-- 背景圆角矩形 -->
+  <rect width="512" height="512" rx="102" ry="102" fill="url(#bgGradient)"/>
+  
+  <!-- 装饰圆点 -->
+  <circle cx="77" cy="77" r="15" fill="#FFD54F" opacity="0.6"/>
+  <circle cx="435" cy="435" r="13" fill="#FFD54F" opacity="0.6"/>
+  
+  <!-- 背景闪卡 -->
+  <rect x="133" y="195" width="297" height="154" rx="26" ry="26" fill="#FFFFFF" opacity="0.8"/>
+  
+  <!-- 主闪卡 -->
+  <rect x="123" y="185" width="307" height="164" rx="26" ry="26" fill="#FFFFFF" filter="url(#cardShadow)"/>
+  
+  <!-- 字母 A -->
+  <text x="256" y="290" font-family="Arial, sans-serif" font-size="77" font-weight="bold" text-anchor="middle" fill="#1976D2">A</text>
+  
+  <!-- 装饰点 -->
+  <circle cx="297" cy="230" r="8" fill="#FFD54F"/>
+  <circle cx="297" cy="266" r="6" fill="#FFD54F"/>
+  <circle cx="297" cy="297" r="5" fill="#FFD54F"/>
+  
+  <!-- 星星装饰 -->
+  <g transform="translate(410, 103)">
+    <polygon points="0,-10 2.9,-3.1 9.5,-3.1 4.8,1.5 7.7,8.4 0,4.9 -7.7,8.4 -4.8,1.5 -9.5,-3.1 -2.9,-3.1" fill="#FFD54F" opacity="0.8"/>
+  </g>
+  
+  <g transform="translate(103, 410)">
+    <polygon points="0,-8 2.3,-2.5 7.6,-2.5 3.8,1.2 6.1,6.7 0,3.9 -6.1,6.7 -3.8,1.2 -7.6,-2.5 -2.3,-2.5" fill="#FFD54F" opacity="0.8"/>
+  </g>
+</svg>

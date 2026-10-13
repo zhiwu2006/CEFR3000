@@ -1,0 +1,14 @@
+// 数据仓储层导出文件
+export 'word_repository.dart';
+export 'progress_repository.dart';
+export 'tts_service.dart';
+export 'hive_word_repository.dart';
+export 'hive_progress_repository.dart';
+export 'sqlite/sqlite_progress_repository.dart';
+export 'migration/legacy_progress_migrator.dart';
+export 'flutter_tts_service.dart';
+export 'review_commit_repository.dart';
+export 'exposure_repository.dart';
+export 'learning_item_state_repository.dart';
+export 'word_preference_repository.dart';
+export 'secure_credential_store.dart';
