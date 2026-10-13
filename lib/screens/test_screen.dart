@@ -874,97 +874,105 @@ class _TestScreenState extends ConsumerState<TestScreen>
                               themeStyle,
                             ),
                             const SizedBox(height: 16),
-                            // 平板端暂停按钮
-                            GestureDetector(
-                              onTap: () {
-                                final controller = ref.read(
-                                  sessionControllerProvider.notifier,
-                                );
-                                debugPrint(
-                                  'Tablet pause button tapped, isPaused=$isPaused, state=${currentSessionData.state}',
-                                );
-                                if (isPaused) {
-                                  controller.resumeSession();
-                                } else {
-                                  controller.pauseSession();
-                                }
-                              },
-                              child: Container(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 24,
-                                  vertical: 12,
-                                ),
-                                decoration: BoxDecoration(
-                                  color: theme.colorScheme.primary.withValues(
-                                    alpha: 0.1,
-                                  ),
-                                  borderRadius: BorderRadius.circular(
-                                    borderRadius,
-                                  ),
-                                  border: Border.all(
-                                    color: theme.colorScheme.primary.withValues(
-                                      alpha: 0.3,
+                            // 暂停与重置并排并拉开距离，避免误触重置。
+                            Wrap(
+                              alignment: WrapAlignment.center,
+                              spacing: 32,
+                              runSpacing: 20,
+                              children: [
+                                GestureDetector(
+                                  onTap: () {
+                                    final controller = ref.read(
+                                      sessionControllerProvider.notifier,
+                                    );
+                                    debugPrint(
+                                      'Tablet pause button tapped, isPaused=$isPaused, state=${currentSessionData.state}',
+                                    );
+                                    if (isPaused) {
+                                      controller.resumeSession();
+                                    } else {
+                                      controller.pauseSession();
+                                    }
+                                  },
+                                  child: Container(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 28,
+                                      vertical: 16,
+                                    ),
+                                    decoration: BoxDecoration(
+                                      color: theme.colorScheme.primary
+                                          .withValues(alpha: 0.1),
+                                      borderRadius: BorderRadius.circular(
+                                        borderRadius,
+                                      ),
+                                      border: Border.all(
+                                        color: theme.colorScheme.primary
+                                            .withValues(alpha: 0.3),
+                                      ),
+                                    ),
+                                    child: Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        Icon(
+                                          isPaused
+                                              ? Icons.play_arrow
+                                              : Icons.pause,
+                                          color: theme.colorScheme.primary,
+                                        ),
+                                        const SizedBox(width: 8),
+                                        Text(
+                                          isPaused ? '继续' : '暂停',
+                                          style: theme.textTheme.titleMedium
+                                              ?.copyWith(
+                                                color:
+                                                    theme.colorScheme.primary,
+                                                fontWeight: FontWeight.w600,
+                                              ),
+                                        ),
+                                      ],
                                     ),
                                   ),
                                 ),
-                                child: Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    Icon(
-                                      isPaused ? Icons.play_arrow : Icons.pause,
-                                      color: theme.colorScheme.primary,
+                                GestureDetector(
+                                  onTap: () =>
+                                      _showResetConfirmDialog(context, ref),
+                                  child: Container(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 28,
+                                      vertical: 16,
                                     ),
-                                    const SizedBox(width: 8),
-                                    Text(
-                                      isPaused ? '继续' : '暂停',
-                                      style: theme.textTheme.titleMedium
-                                          ?.copyWith(
-                                            color: theme.colorScheme.primary,
-                                            fontWeight: FontWeight.w600,
-                                          ),
+                                    decoration: BoxDecoration(
+                                      color: Colors.red.withValues(alpha: 0.1),
+                                      borderRadius: BorderRadius.circular(
+                                        borderRadius,
+                                      ),
+                                      border: Border.all(
+                                        color: Colors.red.withValues(
+                                          alpha: 0.3,
+                                        ),
+                                      ),
                                     ),
-                                  ],
-                                ),
-                              ),
-                            ),
-                            const SizedBox(width: 12),
-                            // 重置按钮
-                            GestureDetector(
-                              onTap: () =>
-                                  _showResetConfirmDialog(context, ref),
-                              child: Container(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 24,
-                                  vertical: 12,
-                                ),
-                                decoration: BoxDecoration(
-                                  color: Colors.red.withValues(alpha: 0.1),
-                                  borderRadius: BorderRadius.circular(
-                                    borderRadius,
+                                    child: Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        const Icon(
+                                          Icons.refresh,
+                                          color: Colors.red,
+                                        ),
+                                        const SizedBox(width: 8),
+                                        Text(
+                                          '重置',
+                                          style: theme.textTheme.titleMedium
+                                              ?.copyWith(
+                                                color: Colors.red,
+                                                fontWeight: FontWeight.w600,
+                                              ),
+                                        ),
+                                      ],
+                                    ),
                                   ),
-                                  border: Border.all(
-                                    color: Colors.red.withValues(alpha: 0.3),
-                                  ),
                                 ),
-                                child: Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    const Icon(
-                                      Icons.refresh,
-                                      color: Colors.red,
-                                    ),
-                                    const SizedBox(width: 8),
-                                    Text(
-                                      '重置',
-                                      style: theme.textTheme.titleMedium
-                                          ?.copyWith(
-                                            color: Colors.red,
-                                            fontWeight: FontWeight.w600,
-                                          ),
-                                    ),
-                                  ],
-                                ),
-                              ),
+                              ],
                             ),
                           ],
                         ),
